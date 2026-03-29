@@ -24,3 +24,12 @@ export interface Settings {
 export interface SettingsPatch {
   reaction_enabled?: boolean;
 }
+
+export interface SessionStateChangedEvent {
+  status: SessionStatus;
+}
+
+export interface SummaryReadyEvent {
+  session_id: string;
+  text: string;
+}
