@@ -8,13 +8,23 @@ export interface SessionState {
 
 export interface SummaryListItem {
   session_id: string;
+  title: string;
   created_at: string;
 }
 
 export interface Summary {
   session_id: string;
+  title: string;
   text: string;
   created_at: string;
+}
+
+export interface AiPreviewState {
+  image_base64: string | null;
+  mime_type: string | null;
+  updated_at: string | null;
+  width: number | null;
+  height: number | null;
 }
 
 export type TimeDisplayMode = "absolute" | "relative";
@@ -50,6 +60,8 @@ export interface SessionStateChangedEvent {
 export interface OverlayReactionEvent {
   text: string;
 }
+
+export interface AiPreviewUpdatedEvent extends AiPreviewState {}
 
 export interface SummaryReadyEvent {
   session_id: string;

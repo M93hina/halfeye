@@ -35,8 +35,21 @@ pub fn show_overlay(app: &AppHandle) -> tauri::Result<()> {
 
     if let Some(monitor) = window.primary_monitor()? {
         let work_area = monitor.work_area();
-        let x = work_area.position.x + work_area.size.width as i32 - OVERLAY_WIDTH - OVERLAY_MARGIN;
-        let y = work_area.position.y + OVERLAY_MARGIN;
+        let window_size = window.outer_size()?;
+        let work_area_left = work_area.position.x;
+        let work_area_top = work_area.position.y;
+        let work_area_right = work_area_left + work_area.size.width as i32;
+        let work_area_bottom = work_area_top + work_area.size.height as i32;
+
+        // Use the actual outer window size so DPI scaling and platform chrome
+        // do not push the overlay off-screen.
+        let desired_x = work_area_right - window_size.width as i32 - OVERLAY_MARGIN;
+        let desired_y = work_area_top + OVERLAY_MARGIN;
+        let max_x = work_area_right - window_size.width as i32;
+        let max_y = work_area_bottom - window_size.height as i32;
+
+        let x = desired_x.clamp(work_area_left, max_x.max(work_area_left));
+        let y = desired_y.clamp(work_area_top, max_y.max(work_area_top));
         window.set_position(PhysicalPosition::new(x, y))?;
     }
 

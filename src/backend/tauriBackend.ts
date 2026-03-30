@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  AiPreviewState,
+  AiPreviewUpdatedEvent,
   SessionState,
   SessionStateChangedEvent,
   Settings,
@@ -26,12 +28,20 @@ export class TauriBackend implements BackendAdapter {
     return invoke<SessionState>("get_session_state");
   }
 
+  getAiPreviewState() {
+    return invoke<AiPreviewState>("get_ai_preview_state");
+  }
+
   listSummaries() {
     return invoke<SummaryListItem[]>("list_summaries");
   }
 
   getSummary(sessionId: string) {
     return invoke<Summary>("get_summary", { sessionId });
+  }
+
+  updateSummaryTitle(sessionId: string, title: string) {
+    return invoke<Summary>("update_summary_title", { sessionId, title });
   }
 
   getSettings() {
@@ -57,6 +67,14 @@ export class TauriBackend implements BackendAdapter {
     handler: (event: SummaryReadyEvent) => void | Promise<void>,
   ) {
     return listen<SummaryReadyEvent>("summary_ready", async (event) => {
+      await handler(event.payload);
+    });
+  }
+
+  async subscribeAiPreviewUpdated(
+    handler: (event: AiPreviewUpdatedEvent) => void | Promise<void>,
+  ) {
+    return listen<AiPreviewUpdatedEvent>("ai_preview_updated", async (event) => {
       await handler(event.payload);
     });
   }

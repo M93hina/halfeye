@@ -40,6 +40,7 @@ pub async fn generate_summary(
     );
 
     let summary_text = client.generate_text(&prompt).await?;
+    let summary_title = derive_summary_title(&summary_text, session_id);
 
     let summary_id = Uuid::new_v4().to_string();
     let created_at = Utc::now().to_rfc3339();
@@ -47,12 +48,22 @@ pub async fn generate_summary(
     {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT INTO summaries (id, session_id, text, created_at) VALUES (?1, ?2, ?3, ?4)",
-            params![summary_id, session_id, summary_text, created_at],
+            "INSERT INTO summaries (id, session_id, title, text, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![summary_id, session_id, summary_title, summary_text, created_at],
         )
         .map_err(|e| e.to_string())?;
     }
 
     eprintln!("Summary generated for session {}", session_id);
     Ok(())
+}
+
+fn derive_summary_title(summary_text: &str, session_id: &str) -> String {
+    let first_meaningful_line = summary_text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or(session_id);
+
+    first_meaningful_line.chars().take(40).collect()
 }

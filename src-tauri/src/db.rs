@@ -41,15 +41,40 @@ fn migrate(conn: &Connection) -> Result<()> {
             value TEXT NOT NULL
         );
 
-        DELETE FROM settings WHERE key IN ('reaction_enabled', 'auto_open_summary', 'compact_ui');
-        INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_select_summary', 'true');
-        INSERT OR IGNORE INTO settings (key, value) VALUES ('confirm_before_stop', 'true');
-        INSERT OR IGNORE INTO settings (key, value) VALUES ('time_display_mode', 'absolute');
-        INSERT OR IGNORE INTO settings (key, value) VALUES ('summaries_sort_order', 'newest');
-        INSERT OR IGNORE INTO settings (key, value) VALUES ('summary_font_size', 'medium');
-        INSERT OR IGNORE INTO settings (key, value) VALUES ('active_session_emphasis', 'strong');
-        INSERT OR IGNORE INTO settings (key, value) VALUES ('theme_mode', 'light');
+         DELETE FROM settings WHERE key IN ('reaction_enabled', 'auto_open_summary', 'compact_ui');
+         INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_select_summary', 'true');
+         INSERT OR IGNORE INTO settings (key, value) VALUES ('confirm_before_stop', 'true');
+         INSERT OR IGNORE INTO settings (key, value) VALUES ('time_display_mode', 'absolute');
+         INSERT OR IGNORE INTO settings (key, value) VALUES ('summaries_sort_order', 'newest');
+         INSERT OR IGNORE INTO settings (key, value) VALUES ('summary_font_size', 'medium');
+         INSERT OR IGNORE INTO settings (key, value) VALUES ('active_session_emphasis', 'strong');
+         INSERT OR IGNORE INTO settings (key, value) VALUES ('theme_mode', 'light');
         ",
     )?;
+    ensure_summary_title_column(conn)?;
+    Ok(())
+}
+
+fn ensure_summary_title_column(conn: &Connection) -> Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(summaries)")?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    let mut has_title = false;
+
+    for column in columns {
+        if column? == "title" {
+            has_title = true;
+            break;
+        }
+    }
+
+    if !has_title {
+        conn.execute_batch(
+            "ALTER TABLE summaries ADD COLUMN title TEXT NOT NULL DEFAULT '';
+             UPDATE summaries
+             SET title = session_id
+             WHERE trim(COALESCE(title, '')) = '';",
+        )?;
+    }
+
     Ok(())
 }
