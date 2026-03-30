@@ -1,5 +1,6 @@
 pub mod gemini;
 
+use crate::audio::TranscriptChunk;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +72,7 @@ pub trait LlmClient: Send + Sync {
     async fn generate_reaction(
         &self,
         image_base64: &str,
+        transcript_chunks: &[TranscriptChunk],
         context: &[ReactionContext],
     ) -> Result<ReactionOutput, String>;
     async fn generate_text(&self, prompt: &str) -> Result<String, String>;

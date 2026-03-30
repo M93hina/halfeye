@@ -1,3 +1,4 @@
+use crate::audio::{TranscriptChunk, TranscriptSource};
 use crate::llm::{LlmClient, ReactionContext, ReactionOutput};
 use async_trait::async_trait;
 use reqwest::Client;
@@ -5,10 +6,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 const GEMINI_MODEL: &str = "gemini-3-flash-preview";
-const DEFAULT_REACTION_PROMPT: &str = "画面を観察し、必要なら短いリアクションを返してください。";
+const DEFAULT_REACTION_PROMPT: &str =
+    "画面を観察し、必要なら短いリアクションを返してください。音声文字起こしがある場合は、その会話内容も文脈として使ってください。";
 const REACTION_SYSTEM_PROMPT: &str = r#"あなたはユーザーのPC画面を定期的に観察するAIアシスタントです。
 
-過去の履歴は、画面観察の要約と表示したリアクションの正規化ログです。内部推論を書かず、観察結果の要約だけを `observation_summary` に入れてください。
+過去の履歴は、画面観察の要約と表示したリアクションの正規化ログです。今回の入力には、画面キャプチャに加えて、直近の音声文字起こしが含まれることがあります。内部推論を書かず、観察結果の要約だけを `observation_summary` に入れてください。
 
 出力ルール:
 - `observation_summary` は画面の状況や変化を日本語で1-2文で要約する
@@ -200,6 +202,38 @@ impl GeminiClient {
         ]
         .join("\n")
     }
+
+    fn format_transcript_chunks(transcript_chunks: &[TranscriptChunk]) -> String {
+        if transcript_chunks.is_empty() {
+            return "音声文字起こし: なし".to_string();
+        }
+
+        let lines = transcript_chunks
+            .iter()
+            .map(|chunk| {
+                let source = match chunk.source {
+                    TranscriptSource::Microphone => "microphone",
+                    TranscriptSource::System => "system",
+                };
+                let speaker_turn = if chunk.speaker_turn {
+                    "speaker_turn"
+                } else {
+                    "continuous"
+                };
+
+                format!(
+                    "[{} {} -> {} {}] {}",
+                    source,
+                    chunk.started_at,
+                    chunk.ended_at,
+                    speaker_turn,
+                    chunk.text.trim()
+                )
+            })
+            .collect::<Vec<_>>();
+
+        format!("直近の音声文字起こし:\n{}", lines.join("\n"))
+    }
 }
 
 #[async_trait]
@@ -207,6 +241,7 @@ impl LlmClient for GeminiClient {
     async fn generate_reaction(
         &self,
         image_base64: &str,
+        transcript_chunks: &[TranscriptChunk],
         context: &[ReactionContext],
     ) -> Result<ReactionOutput, String> {
         if image_base64.trim().is_empty() {
@@ -218,7 +253,11 @@ impl LlmClient for GeminiClient {
             role: Some("user".to_string()),
             parts: vec![
                 Part::Text {
-                    text: DEFAULT_REACTION_PROMPT.to_string(),
+                    text: format!(
+                        "{}\n\n{}",
+                        DEFAULT_REACTION_PROMPT,
+                        Self::format_transcript_chunks(transcript_chunks)
+                    ),
                 },
                 Part::InlineData {
                     inline_data: InlineData {

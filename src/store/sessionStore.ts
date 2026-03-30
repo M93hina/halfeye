@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type {
+  AudioTranscriptionStatus,
   AiPreviewState,
   ReactionLog,
   SessionState,
@@ -15,6 +16,7 @@ function createInitialSessionState(): SessionState {
     status: "idle",
     session_id: null,
     started_at: null,
+    audio_transcription_enabled: false,
   };
 }
 
@@ -32,6 +34,7 @@ interface SessionStore {
   bootstrapState: BootstrapState;
   errorMessage: string | null;
   sessionState: SessionState;
+  audioTranscriptionStatus: AudioTranscriptionStatus | null;
   aiPreview: AiPreviewState;
   settings: Settings | null;
   summaries: SummaryListItem[];
@@ -47,6 +50,7 @@ interface SessionStore {
   setErrorMessage: (message: string) => void;
   clearErrorMessage: () => void;
   setSessionState: (state: SessionState) => void;
+  setAudioTranscriptionStatus: (status: AudioTranscriptionStatus) => void;
   setAiPreview: (state: AiPreviewState) => void;
   setSettings: (settings: Settings) => void;
   setSummaries: (summaries: SummaryListItem[]) => void;
@@ -64,6 +68,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   bootstrapState: "idle",
   errorMessage: null,
   sessionState: createInitialSessionState(),
+  audioTranscriptionStatus: null,
   aiPreview: createInitialAiPreviewState(),
   settings: null,
   summaries: [],
@@ -79,6 +84,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   setErrorMessage: (errorMessage) => set({ errorMessage }),
   clearErrorMessage: () => set({ errorMessage: null }),
   setSessionState: (sessionState) => set({ sessionState }),
+  setAudioTranscriptionStatus: (audioTranscriptionStatus) => set({ audioTranscriptionStatus }),
   setAiPreview: (aiPreview) => set({ aiPreview }),
   setSettings: (settings) => set({ settings }),
   setSummaries: (summaries) => set({ summaries }),

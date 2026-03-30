@@ -4,6 +4,17 @@ export interface SessionState {
   status: SessionStatus;
   session_id: string | null;
   started_at: string | null;
+  audio_transcription_enabled: boolean;
+}
+
+export interface StartSessionOptions {
+  audio_transcription: boolean;
+}
+
+export interface AudioTranscriptionStatus {
+  available: boolean;
+  model_path: string;
+  reason: string | null;
 }
 
 export interface SummaryListItem {

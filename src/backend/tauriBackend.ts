@@ -1,9 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  AudioTranscriptionStatus,
   AiPreviewState,
   AiPreviewUpdatedEvent,
   ReactionLog,
+  StartSessionOptions,
   SessionState,
   SessionStateChangedEvent,
   Settings,
@@ -17,8 +19,8 @@ import type { BackendAdapter } from "./types";
 export class TauriBackend implements BackendAdapter {
   readonly kind = "tauri" as const;
 
-  startSession() {
-    return invoke<string>("start_session");
+  startSession(options: StartSessionOptions) {
+    return invoke<string>("start_session", { options });
   }
 
   stopSession() {
@@ -27,6 +29,10 @@ export class TauriBackend implements BackendAdapter {
 
   getSessionState() {
     return invoke<SessionState>("get_session_state");
+  }
+
+  getAudioTranscriptionStatus() {
+    return invoke<AudioTranscriptionStatus>("get_audio_transcription_status");
   }
 
   getAiPreviewState() {

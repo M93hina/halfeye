@@ -1,10 +1,12 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 use tokio::sync::watch;
 
+use crate::audio::{AudioRuntimeState, TranscriptChunk, TranscriptionWorkerHandle};
 use crate::capture::CaptureHandle;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -20,6 +22,7 @@ pub struct SessionState {
     pub status: SessionStatus,
     pub session_id: Option<String>,
     pub started_at: Option<String>,
+    pub audio_transcription_enabled: bool,
 }
 
 impl Default for SessionState {
@@ -28,8 +31,14 @@ impl Default for SessionState {
             status: SessionStatus::Idle,
             session_id: None,
             started_at: None,
+            audio_transcription_enabled: false,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartSessionOptions {
+    pub audio_transcription: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +68,9 @@ pub struct AppState {
     pub session_rx: watch::Receiver<SessionState>,
     pub ai_preview: Mutex<AiPreviewState>,
     pub capture_handle: Mutex<Option<CaptureHandle>>,
+    pub audio_handle: Mutex<Option<TranscriptionWorkerHandle>>,
+    pub transcript_chunks: Mutex<Vec<TranscriptChunk>>,
+    pub audio_runtime: Mutex<AudioRuntimeState>,
     pub last_llm_started_at: Mutex<Option<Instant>>,
     pub llm_in_flight: Mutex<bool>,
     pub reaction_in_flight: AtomicBool,
@@ -66,14 +78,18 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(db: Mutex<Connection>) -> Arc<Self> {
+    pub fn new(db: Mutex<Connection>, app_data_dir: PathBuf) -> Arc<Self> {
         let (session_tx, session_rx) = watch::channel(SessionState::default());
+        let audio_runtime = AudioRuntimeState::new(crate::audio::resolve_model_path(&app_data_dir));
         Arc::new_cyclic(|weak| Self {
             db,
             session_tx,
             session_rx,
             ai_preview: Mutex::new(AiPreviewState::default()),
             capture_handle: Mutex::new(None),
+            audio_handle: Mutex::new(None),
+            transcript_chunks: Mutex::new(Vec::new()),
+            audio_runtime: Mutex::new(audio_runtime),
             last_llm_started_at: Mutex::new(None),
             llm_in_flight: Mutex::new(false),
             reaction_in_flight: AtomicBool::new(false),

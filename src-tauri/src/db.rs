@@ -19,7 +19,8 @@ fn migrate(conn: &Connection) -> Result<()> {
             id         TEXT PRIMARY KEY,
             started_at TEXT NOT NULL,
             ended_at   TEXT,
-            status     TEXT NOT NULL
+            status     TEXT NOT NULL,
+            audio_enabled INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS reactions (
@@ -63,6 +64,13 @@ fn migrate(conn: &Connection) -> Result<()> {
     if !column_exists(conn, "reactions", "action_type")? {
         conn.execute(
             "ALTER TABLE reactions ADD COLUMN action_type TEXT NOT NULL DEFAULT 'react'",
+            [],
+        )?;
+    }
+
+    if !column_exists(conn, "sessions", "audio_enabled")? {
+        conn.execute(
+            "ALTER TABLE sessions ADD COLUMN audio_enabled INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
     }
