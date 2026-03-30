@@ -43,7 +43,15 @@ export class MockBackend implements BackendAdapter {
   readonly kind = "mock" as const;
 
   private sessionState: SessionState = createIdleState();
-  private settings: Settings = { reaction_enabled: true };
+  private settings: Settings = {
+    auto_select_summary: true,
+    confirm_before_stop: true,
+    time_display_mode: "absolute",
+    summaries_sort_order: "newest",
+    summary_font_size: "medium",
+    active_session_emphasis: "strong",
+    theme_mode: "light",
+  };
   private summaries = createSeededSummaries();
   private sessionStateListeners = new Set<
     (event: SessionStateChangedEvent) => void | Promise<void>

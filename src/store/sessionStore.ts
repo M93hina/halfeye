@@ -61,7 +61,11 @@ export const useSessionStore = create<SessionStore>((set) => ({
   setSettings: (settings) => set({ settings }),
   setSummaries: (summaries) => set({ summaries }),
   setSelectedSummaryId: (selectedSummaryId) =>
-    set({ selectedSummaryId, selectedSummary: null }),
+    set((state) =>
+      state.selectedSummaryId === selectedSummaryId
+        ? { selectedSummaryId }
+        : { selectedSummaryId, selectedSummary: null },
+    ),
   setSelectedSummary: (selectedSummary) => set({ selectedSummary }),
   setSessionActionPending: (isSessionActionPending) => set({ isSessionActionPending }),
   setSettingsPending: (isSettingsPending) => set({ isSettingsPending }),

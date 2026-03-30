@@ -41,7 +41,14 @@ fn migrate(conn: &Connection) -> Result<()> {
             value TEXT NOT NULL
         );
 
-        INSERT OR IGNORE INTO settings (key, value) VALUES ('reaction_enabled', 'true');
+        DELETE FROM settings WHERE key IN ('reaction_enabled', 'auto_open_summary', 'compact_ui');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_select_summary', 'true');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('confirm_before_stop', 'true');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('time_display_mode', 'absolute');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('summaries_sort_order', 'newest');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('summary_font_size', 'medium');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('active_session_emphasis', 'strong');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('theme_mode', 'light');
         ",
     )?;
     Ok(())
