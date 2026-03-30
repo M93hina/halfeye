@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   OverlayReactionEvent,
   SessionState,
@@ -22,6 +22,7 @@ export default function OverlayApp() {
   const [reaction, setReaction] = useState<string | null>(null);
   const reactionTimerRef = useRef<number | null>(null);
   const statusRef = useRef<SessionStatus>("idle");
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -96,6 +97,32 @@ export default function OverlayApp() {
     };
   }, []);
 
+  useLayoutEffect(() => {
+    if (status !== "active") {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const content = contentRef.current;
+      if (!content) {
+        return;
+      }
+
+      const rect = content.getBoundingClientRect();
+      const nextWidth = Math.ceil(rect.width);
+      const nextHeight = Math.ceil(rect.height);
+
+      void invoke("resize_overlay", {
+        width: nextWidth,
+        height: nextHeight,
+      }).catch(() => {});
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [reaction, status]);
+
   if (status !== "active") {
     return null;
   }
@@ -104,29 +131,28 @@ export default function OverlayApp() {
 
   return (
     <div
+      ref={contentRef}
       style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        justifyContent: "flex-end",
+        display: "inline-flex",
+        justifyContent: "flex-start",
         alignItems: "flex-start",
         padding: "8px",
         pointerEvents: "none",
+        background: "transparent",
       }}
     >
       <div
         style={{
           minWidth: "240px",
-          maxWidth: "100%",
+          width: "fit-content",
+          maxWidth: "520px",
           borderRadius: "16px",
           padding: isWaiting ? "10px 14px" : "14px 18px",
           color: "white",
           border: isWaiting
             ? "1px solid rgba(255, 255, 255, 0.18)"
             : "1px solid rgba(255, 255, 255, 0.22)",
-          background: isWaiting
-            ? "rgba(15, 23, 42, 0.40)"
-            : "rgba(15, 23, 42, 0.82)",
+          background: "rgba(15, 23, 42, 0.62)",
           boxShadow: isWaiting
             ? "0 8px 24px rgba(15, 23, 42, 0.16)"
             : "0 18px 45px rgba(15, 23, 42, 0.34)",
@@ -150,7 +176,9 @@ export default function OverlayApp() {
             fontSize: isWaiting ? "13px" : "16px",
             lineHeight: isWaiting ? 1.45 : 1.5,
             fontWeight: isWaiting ? 500 : 600,
+            whiteSpace: "pre-wrap",
             wordBreak: "break-word",
+            overflowWrap: "anywhere",
           }}
         >
           {isWaiting

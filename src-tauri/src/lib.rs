@@ -34,6 +34,7 @@ pub fn run() {
             commands::session::start_session,
             commands::session::stop_session,
             commands::session::get_session_state,
+            commands::overlay::resize_overlay,
             commands::preview::get_ai_preview_state,
             commands::reactions::list_reactions,
             commands::settings::get_settings,
