@@ -23,6 +23,4 @@ dist-ssr
 *.sln
 *.sw?
 
-
-# 環境変数ファイル（APIキーを含むため必ずgit管理外に）
 .env

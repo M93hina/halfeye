@@ -17,12 +17,30 @@ export interface Summary {
   created_at: string;
 }
 
+export type TimeDisplayMode = "absolute" | "relative";
+export type SummariesSortOrder = "newest" | "oldest";
+export type SummaryFontSize = "small" | "medium" | "large";
+export type ActiveSessionEmphasis = "strong" | "calm";
+export type ThemeMode = "light" | "dark";
+
 export interface Settings {
-  reaction_enabled: boolean;
+  auto_select_summary: boolean;
+  confirm_before_stop: boolean;
+  time_display_mode: TimeDisplayMode;
+  summaries_sort_order: SummariesSortOrder;
+  summary_font_size: SummaryFontSize;
+  active_session_emphasis: ActiveSessionEmphasis;
+  theme_mode: ThemeMode;
 }
 
 export interface SettingsPatch {
-  reaction_enabled?: boolean;
+  auto_select_summary?: boolean;
+  confirm_before_stop?: boolean;
+  time_display_mode?: TimeDisplayMode;
+  summaries_sort_order?: SummariesSortOrder;
+  summary_font_size?: SummaryFontSize;
+  active_session_emphasis?: ActiveSessionEmphasis;
+  theme_mode?: ThemeMode;
 }
 
 export interface SessionStateChangedEvent {
