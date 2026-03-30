@@ -539,12 +539,27 @@ function SummariesTab() {
     summaries,
     settings?.summaries_sort_order ?? "newest",
   );
+  const recentSummaries = sortedSummaries.slice(0, 2);
+  const olderSummaries = sortedSummaries.slice(2);
   const [titleDraft, setTitleDraft] = useState("");
   const [isRenamePending, setRenamePending] = useState(false);
+  const [isRegenerateTitlePending, setRegenerateTitlePending] = useState(false);
+  const [isReactionLogOpen, setReactionLogOpen] = useState(false);
+  const [isOlderSummariesOpen, setOlderSummariesOpen] = useState(false);
 
   useEffect(() => {
     setTitleDraft(selectedSummary?.title ?? "");
   }, [selectedSummary?.session_id, selectedSummary?.title]);
+
+  useEffect(() => {
+    setReactionLogOpen(false);
+  }, [selectedSummaryId]);
+
+  useEffect(() => {
+    if (olderSummaries.length === 0) {
+      setOlderSummariesOpen(false);
+    }
+  }, [olderSummaries.length]);
 
   const currentSummaryTitle = selectedSummary
     ? normalizeSummaryTitle(selectedSummary.title, selectedSummary.session_id)
@@ -555,7 +570,24 @@ function SummariesTab() {
   const canSaveTitle =
     !!selectedSummary &&
     !isRenamePending &&
+    !isRegenerateTitlePending &&
     normalizedTitleDraft !== currentSummaryTitle;
+
+  function applyUpdatedSummaryTitle(updatedSummary: typeof selectedSummary) {
+    if (!updatedSummary) {
+      return;
+    }
+
+    setSelectedSummary(updatedSummary);
+    setSummaries(
+      summaries.map((summary) =>
+        summary.session_id === updatedSummary.session_id
+          ? { ...summary, title: updatedSummary.title }
+          : summary,
+      ),
+    );
+    setTitleDraft(updatedSummary.title);
+  }
 
   async function handleSaveTitle() {
     if (!selectedSummary || !canSaveTitle) {
@@ -570,14 +602,7 @@ function SummariesTab() {
         selectedSummary.session_id,
         normalizedTitleDraft,
       );
-      setSelectedSummary(updatedSummary);
-      setSummaries(
-        summaries.map((summary) =>
-          summary.session_id === updatedSummary.session_id
-            ? { ...summary, title: updatedSummary.title }
-            : summary,
-        ),
-      );
+      applyUpdatedSummaryTitle(updatedSummary);
     } catch (error) {
       setTitleDraft(currentSummaryTitle);
       setErrorMessage(
@@ -585,6 +610,28 @@ function SummariesTab() {
       );
     } finally {
       setRenamePending(false);
+    }
+  }
+
+  async function handleRegenerateTitle() {
+    if (!selectedSummary || isRenamePending || isRegenerateTitlePending) {
+      return;
+    }
+
+    setRegenerateTitlePending(true);
+    clearErrorMessage();
+
+    try {
+      const updatedSummary = await backend.regenerateSummaryTitle(
+        selectedSummary.session_id,
+      );
+      applyUpdatedSummaryTitle(updatedSummary);
+    } catch (error) {
+      setErrorMessage(
+        getErrorMessage(error, "まとめの名前を再生成できませんでした。"),
+      );
+    } finally {
+      setRegenerateTitlePending(false);
     }
   }
 
@@ -618,20 +665,95 @@ function SummariesTab() {
           ) : sortedSummaries.length === 0 ? (
             <EmptyState title="なし" />
           ) : (
-            sortedSummaries.map((summary) => (
-              <SummaryListButton
-                key={summary.session_id}
-                fontSize={fontSize}
-                item={summary}
-                onSelect={() => {
-                  if (summary.session_id !== selectedSummaryId) {
-                    setSelectedSummaryId(summary.session_id);
-                  }
-                }}
-                selected={summary.session_id === selectedSummaryId}
-                timeMode={timeMode}
-              />
-            ))
+            <>
+              {recentSummaries.map((summary) => (
+                <SummaryListButton
+                  key={summary.session_id}
+                  fontSize={fontSize}
+                  item={summary}
+                  onSelect={() => {
+                    if (summary.session_id !== selectedSummaryId) {
+                      setSelectedSummaryId(summary.session_id);
+                    }
+                  }}
+                  selected={summary.session_id === selectedSummaryId}
+                  timeMode={timeMode}
+                />
+              ))}
+
+              {olderSummaries.length > 0 ? (
+                <section
+                  className={cx(
+                    "overflow-hidden rounded-[1rem] border",
+                    isDark
+                      ? "border-slate-800 bg-slate-900/60"
+                      : "border-stone-200 bg-stone-50/80",
+                  )}
+                >
+                  <button
+                    className={cx(
+                      "flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition",
+                      isDark ? "hover:bg-slate-800/80" : "hover:bg-white/80",
+                    )}
+                    onClick={() => setOlderSummariesOpen((current) => !current)}
+                    type="button"
+                  >
+                    <div className="min-w-0">
+                      <div
+                        className={cx(
+                          "text-sm font-medium",
+                          isDark ? "text-slate-100" : "text-slate-900",
+                        )}
+                      >
+                        それ以前のまとめ
+                      </div>
+                      <div
+                        className={cx(
+                          "mt-1 text-xs",
+                          isDark ? "text-slate-400" : "text-slate-500",
+                        )}
+                      >
+                        {olderSummaries.length}件
+                      </div>
+                    </div>
+                    <span
+                      className={cx(
+                        "rounded-full border px-2.5 py-1 text-xs font-medium",
+                        isDark
+                          ? "border-slate-700 bg-slate-800 text-slate-300"
+                          : "border-stone-200 bg-white text-slate-600",
+                      )}
+                    >
+                      {isOlderSummariesOpen ? "閉じる" : "開く"}
+                    </span>
+                  </button>
+
+                  {isOlderSummariesOpen ? (
+                    <div
+                      className={cx(
+                        "space-y-2 border-t p-3",
+                        isDark ? "border-slate-800" : "border-stone-200",
+                      )}
+                    >
+                      {olderSummaries.map((summary) => (
+                        <SummaryListButton
+                          key={summary.session_id}
+                          fontSize={fontSize}
+                          item={summary}
+                          onSelect={() => {
+                            if (summary.session_id !== selectedSummaryId) {
+                              setSelectedSummaryId(summary.session_id);
+                            }
+                          }}
+                          selected={summary.session_id === selectedSummaryId}
+                          timeMode={timeMode}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+            </>
           )}
         </div>
       </Panel>
@@ -661,7 +783,7 @@ function SummariesTab() {
                         ? "border-slate-700 bg-slate-950 text-slate-100 placeholder:text-slate-500"
                         : "border-stone-200 bg-white text-slate-700 placeholder:text-slate-400",
                     )}
-                    disabled={isRenamePending}
+                    disabled={isRenamePending || isRegenerateTitlePending}
                     maxLength={40}
                     onChange={(event) => setTitleDraft(event.target.value)}
                     onKeyDown={(event) => {
@@ -687,6 +809,15 @@ function SummariesTab() {
                     }}
                   >
                     {isRenamePending ? "保存中" : "保存"}
+                  </ActionButton>
+                  <ActionButton
+                    disabled={!selectedSummary || isRenamePending || isRegenerateTitlePending}
+                    intent="secondary"
+                    onClick={() => {
+                      void handleRegenerateTitle();
+                    }}
+                  >
+                    {isRegenerateTitlePending ? "再生成中" : "再生成"}
                   </ActionButton>
                 </div>
               </div>
@@ -729,94 +860,132 @@ function SummariesTab() {
               </pre>
             </article>
 
-            <section className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3
-                  className={cx(
-                    "text-sm font-semibold uppercase tracking-[0.2em]",
-                    isDark ? "text-slate-400" : "text-slate-500",
-                  )}
-                >
-                  Reaction Log
-                </h3>
-                <span
-                  className={cx(
-                    "rounded-full border px-2.5 py-1 text-xs font-medium",
-                    isDark
-                      ? "border-slate-700 bg-slate-800 text-slate-300"
-                      : "border-stone-200 bg-stone-100 text-slate-600",
-                  )}
-                >
-                  {reactions.length}
-                </span>
-              </div>
-
-              {isReactionsLoading && reactions.length === 0 ? (
-                <EmptyState title="ログ読み込み中" />
-              ) : reactions.length === 0 ? (
-                <EmptyState title="ログなし" />
-              ) : (
-                <div className="space-y-3">
-                  {reactions.map((reaction) => (
-                    <article
-                      key={reaction.id}
-                      className={cx(
-                        "rounded-[1.1rem] border p-4",
-                        isDark
-                          ? "border-slate-800 bg-slate-950/50"
-                          : "border-stone-200 bg-white/70",
-                      )}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <span
-                          className={cx(
-                            "rounded-full border px-2.5 py-1 text-xs font-medium uppercase tracking-[0.16em]",
-                            reaction.action_type === "react"
-                              ? isDark
-                                ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-100"
-                                : "border-sky-200 bg-sky-50 text-sky-700"
-                              : isDark
-                                ? "border-slate-700 bg-slate-800 text-slate-300"
-                                : "border-stone-200 bg-stone-100 text-slate-600",
-                          )}
-                        >
-                          {formatActionLabel(reaction.action_type)}
-                        </span>
-                        <span
-                          className={cx(
-                            "text-xs",
-                            isDark ? "text-slate-400" : "text-slate-500",
-                          )}
-                        >
-                          {formatDisplayTime(reaction.timestamp, timeMode)}
-                        </span>
-                      </div>
-
-                      <p
-                        className={cx(
-                          "mt-3 text-sm leading-7",
-                          isDark ? "text-slate-200" : "text-slate-700",
-                        )}
-                      >
-                        {reaction.observation_summary}
-                      </p>
-
-                      <div
-                        className={cx(
-                          "mt-3 rounded-xl border px-3 py-2 text-sm",
-                          isDark
-                            ? "border-slate-800 bg-slate-900 text-slate-300"
-                            : "border-stone-200 bg-stone-50 text-slate-600",
-                        )}
-                      >
-                        {reaction.action_type === "react" && reaction.text.trim().length > 0
-                          ? reaction.text
-                          : "silent"}
-                      </div>
-                    </article>
-                  ))}
-                </div>
+            <section
+              className={cx(
+                "overflow-hidden rounded-[1.25rem] border",
+                isDark
+                  ? "border-slate-800 bg-slate-900/60"
+                  : "border-stone-200 bg-stone-50/70",
               )}
+            >
+              <button
+                className={cx(
+                  "flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition",
+                  isDark ? "hover:bg-slate-800/70" : "hover:bg-white/70",
+                )}
+                onClick={() => setReactionLogOpen((current) => !current)}
+                type="button"
+              >
+                <div className="min-w-0">
+                  <h3
+                    className={cx(
+                      "text-sm font-semibold uppercase tracking-[0.2em]",
+                      isDark ? "text-slate-400" : "text-slate-500",
+                    )}
+                  >
+                    Reaction Log
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cx(
+                      "rounded-full border px-2.5 py-1 text-xs font-medium",
+                      isDark
+                        ? "border-slate-700 bg-slate-800 text-slate-300"
+                        : "border-stone-200 bg-stone-100 text-slate-600",
+                    )}
+                  >
+                    {reactions.length}
+                  </span>
+                  <span
+                    className={cx(
+                      "rounded-full border px-2.5 py-1 text-xs font-medium",
+                      isDark
+                        ? "border-slate-700 bg-slate-900 text-slate-300"
+                        : "border-stone-200 bg-white text-slate-600",
+                    )}
+                  >
+                    {isReactionLogOpen ? "閉じる" : "開く"}
+                  </span>
+                </div>
+              </button>
+
+              {isReactionLogOpen ? (
+                <div
+                  className={cx(
+                    "space-y-3 border-t px-4 py-4",
+                    isDark ? "border-slate-800" : "border-stone-200",
+                  )}
+                >
+                  {isReactionsLoading && reactions.length === 0 ? (
+                    <EmptyState title="ログ読み込み中" />
+                  ) : reactions.length === 0 ? (
+                    <EmptyState title="ログなし" />
+                  ) : (
+                    <div className="space-y-3">
+                      {reactions.map((reaction) => (
+                        <article
+                          key={reaction.id}
+                          className={cx(
+                            "rounded-[1.1rem] border p-4",
+                            isDark
+                              ? "border-slate-800 bg-slate-950/50"
+                              : "border-stone-200 bg-white/70",
+                          )}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <span
+                              className={cx(
+                                "rounded-full border px-2.5 py-1 text-xs font-medium uppercase tracking-[0.16em]",
+                                reaction.action_type === "react"
+                                  ? isDark
+                                    ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-100"
+                                    : "border-sky-200 bg-sky-50 text-sky-700"
+                                  : isDark
+                                    ? "border-slate-700 bg-slate-800 text-slate-300"
+                                    : "border-stone-200 bg-stone-100 text-slate-600",
+                              )}
+                            >
+                              {formatActionLabel(reaction.action_type)}
+                            </span>
+                            <span
+                              className={cx(
+                                "text-xs",
+                                isDark ? "text-slate-400" : "text-slate-500",
+                              )}
+                            >
+                              {formatDisplayTime(reaction.timestamp, timeMode)}
+                            </span>
+                          </div>
+
+                          <p
+                            className={cx(
+                              "mt-3 text-sm leading-7",
+                              isDark ? "text-slate-200" : "text-slate-700",
+                            )}
+                          >
+                            {reaction.observation_summary}
+                          </p>
+
+                          <div
+                            className={cx(
+                              "mt-3 rounded-xl border px-3 py-2 text-sm",
+                              isDark
+                                ? "border-slate-800 bg-slate-900 text-slate-300"
+                                : "border-stone-200 bg-stone-50 text-slate-600",
+                            )}
+                          >
+                            {reaction.action_type === "react" &&
+                            reaction.text.trim().length > 0
+                              ? reaction.text
+                              : "silent"}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </section>
           </div>
         ) : (

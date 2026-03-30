@@ -1,13 +1,13 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 use tokio::sync::watch;
 
 use crate::audio::{AudioRuntimeState, TranscriptChunk, TranscriptionWorkerHandle};
-use crate::capture::CaptureHandle;
+use crate::capture::{CaptureHandle, CaptureThumb};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -71,6 +71,8 @@ pub struct AppState {
     pub audio_handle: Mutex<Option<TranscriptionWorkerHandle>>,
     pub transcript_chunks: Mutex<Vec<TranscriptChunk>>,
     pub audio_runtime: Mutex<AudioRuntimeState>,
+    pub last_capture_thumbnail: Mutex<Option<CaptureThumb>>,
+    pub capture_generation: AtomicU64,
     pub last_llm_started_at: Mutex<Option<Instant>>,
     pub llm_in_flight: Mutex<bool>,
     pub reaction_in_flight: AtomicBool,
@@ -90,6 +92,8 @@ impl AppState {
             audio_handle: Mutex::new(None),
             transcript_chunks: Mutex::new(Vec::new()),
             audio_runtime: Mutex::new(audio_runtime),
+            last_capture_thumbnail: Mutex::new(None),
+            capture_generation: AtomicU64::new(0),
             last_llm_started_at: Mutex::new(None),
             llm_in_flight: Mutex::new(false),
             reaction_in_flight: AtomicBool::new(false),

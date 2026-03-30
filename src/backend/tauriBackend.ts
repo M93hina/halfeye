@@ -55,6 +55,10 @@ export class TauriBackend implements BackendAdapter {
     return invoke<Summary>("update_summary_title", { sessionId, title });
   }
 
+  regenerateSummaryTitle(sessionId: string) {
+    return invoke<Summary>("regenerate_summary_title", { sessionId });
+  }
+
   getSettings() {
     return invoke<Settings>("get_settings");
   }

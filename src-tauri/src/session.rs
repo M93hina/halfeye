@@ -59,9 +59,32 @@ fn update_ai_preview(app: &AppHandle, state: &AppState, image_base64: &str) -> R
     Ok(())
 }
 
-fn should_run_llm(state: &AppState) -> Result<bool, String> {
-    let mut in_flight = state.llm_in_flight.lock().map_err(|e| e.to_string())?;
+fn can_attempt_llm(state: &AppState) -> Result<bool, String> {
+    let in_flight = state.llm_in_flight.lock().map_err(|e| e.to_string())?;
     if *in_flight {
+        return Ok(false);
+    }
+
+    let last_started_at = state
+        .last_llm_started_at
+        .lock()
+        .map_err(|e| e.to_string())?;
+    let now = Instant::now();
+
+    if last_started_at
+        .as_ref()
+        .map(|last| now.duration_since(*last) < Duration::from_secs(LLM_INTERVAL_SECS))
+        .unwrap_or(false)
+    {
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
+fn try_begin_llm(state: &AppState, generation: u64) -> Result<bool, String> {
+    let mut in_flight = state.llm_in_flight.lock().map_err(|e| e.to_string())?;
+    if *in_flight || !is_current_generation(state, generation) {
         return Ok(false);
     }
 
@@ -97,6 +120,58 @@ fn reset_llm_state(state: &AppState) {
     if let Ok(mut in_flight) = state.llm_in_flight.lock() {
         *in_flight = false;
     }
+}
+
+fn reset_thumbnail(state: &AppState) -> Result<(), String> {
+    let mut thumbnail = state
+        .last_capture_thumbnail
+        .lock()
+        .map_err(|e| e.to_string())?;
+    *thumbnail = None;
+    Ok(())
+}
+
+fn update_thumbnail(
+    state: &AppState,
+    generation: u64,
+    thumb: capture::CaptureThumb,
+) -> Result<bool, String> {
+    let mut thumbnail = state
+        .last_capture_thumbnail
+        .lock()
+        .map_err(|e| e.to_string())?;
+    if !is_current_generation(state, generation) {
+        return Ok(false);
+    }
+
+    *thumbnail = Some(thumb);
+    Ok(true)
+}
+
+fn screen_has_changed(
+    state: &AppState,
+    new_thumb: &capture::CaptureThumb,
+) -> Result<bool, String> {
+    let thumbnail = state
+        .last_capture_thumbnail
+        .lock()
+        .map_err(|e| e.to_string())?;
+
+    Ok(thumbnail
+        .as_ref()
+        .map(|prev| capture::has_significant_change(prev, new_thumb))
+        .unwrap_or(true))
+}
+
+fn next_capture_generation(state: &AppState) -> u64 {
+    state
+        .capture_generation
+        .fetch_add(1, Ordering::AcqRel)
+        .wrapping_add(1)
+}
+
+fn is_current_generation(state: &AppState, generation: u64) -> bool {
+    state.capture_generation.load(Ordering::Acquire) == generation
 }
 
 pub fn start_session(
@@ -137,56 +212,10 @@ pub fn start_session(
         *handle_guard = Some(audio_handle);
     }
 
+    let capture_generation = next_capture_generation(state);
     reset_llm_state(state);
+    reset_thumbnail(state)?;
     clear_ai_preview(app, state)?;
-
-    let state_arc = state.self_arc.upgrade().ok_or("AppState Arc not set")?;
-    let app_handle = app.clone();
-    let handle = capture::start_capture_loop(PREVIEW_INTERVAL_SECS, move |image_data| {
-        let state_arc = state_arc.clone();
-        let app_handle = app_handle.clone();
-        tokio::spawn(async move {
-            if let Err(error) = update_ai_preview(&app_handle, &state_arc, &image_data) {
-                eprintln!("AI preview error: {}", error);
-            }
-
-            match should_run_llm(&state_arc) {
-                Ok(true) => {
-                    state_arc.reaction_in_flight.store(true, Ordering::Release);
-                    let transcript_chunks = match audio::take_pending_transcript_chunks(&state_arc) {
-                        Ok(chunks) => chunks,
-                        Err(error) => {
-                            eprintln!("Transcript buffer error: {}", error);
-                            Vec::new()
-                        }
-                    };
-                    match reaction::generate_and_save_reaction(
-                        &state_arc,
-                        &image_data,
-                        &transcript_chunks,
-                    )
-                    .await
-                    {
-                        Ok(Some(text)) => {
-                            let _ = app_handle
-                                .emit("overlay-reaction", serde_json::json!({ "text": text }));
-                        }
-                        Ok(None) => {}
-                        Err(error) => eprintln!("Reaction error: {}", error),
-                    }
-                    state_arc.reaction_in_flight.store(false, Ordering::Release);
-                    finish_llm(&state_arc);
-                }
-                Ok(false) => {}
-                Err(error) => eprintln!("LLM cadence error: {}", error),
-            }
-        });
-    });
-    {
-        let mut capture_handle = state.capture_handle.lock().map_err(|e| e.to_string())?;
-        *capture_handle = Some(handle);
-    }
-
     overlay::show_overlay(app).map_err(|e| e.to_string())?;
 
     let new_state = SessionState {
@@ -206,6 +235,109 @@ pub fn start_session(
     )
     .map_err(|e| e.to_string())?;
 
+    let state_arc = state.self_arc.upgrade().ok_or("AppState Arc not set")?;
+    let app_handle = app.clone();
+    let handle = capture::start_capture_loop(PREVIEW_INTERVAL_SECS, move |image_data| {
+        let state_arc = state_arc.clone();
+        let app_handle = app_handle.clone();
+
+        tokio::spawn(async move {
+            if !is_current_generation(&state_arc, capture_generation) {
+                return;
+            }
+
+            if let Err(error) = update_ai_preview(&app_handle, &state_arc, &image_data) {
+                eprintln!("AI preview error: {}", error);
+            }
+
+            match can_attempt_llm(&state_arc) {
+                Ok(false) => return,
+                Ok(true) => {}
+                Err(error) => {
+                    eprintln!("LLM cadence error: {}", error);
+                    return;
+                }
+            }
+
+            let thumbnail = match capture::make_thumbnail(&image_data) {
+                Ok(thumbnail) => thumbnail,
+                Err(error) => {
+                    eprintln!("Thumbnail generation error: {}", error);
+                    return;
+                }
+            };
+
+            if !is_current_generation(&state_arc, capture_generation) {
+                return;
+            }
+
+            let changed = match screen_has_changed(&state_arc, &thumbnail) {
+                Ok(changed) => changed,
+                Err(error) => {
+                    eprintln!("Thumbnail comparison error: {}", error);
+                    return;
+                }
+            };
+
+            if !changed {
+                return;
+            }
+
+            match try_begin_llm(&state_arc, capture_generation) {
+                Ok(true) => {}
+                Ok(false) => return,
+                Err(error) => {
+                    eprintln!("LLM start error: {}", error);
+                    return;
+                }
+            }
+
+            state_arc.reaction_in_flight.store(true, Ordering::Release);
+            if !is_current_generation(&state_arc, capture_generation) {
+                state_arc.reaction_in_flight.store(false, Ordering::Release);
+                finish_llm(&state_arc);
+                return;
+            }
+
+            match update_thumbnail(&state_arc, capture_generation, thumbnail) {
+                Ok(true) => {}
+                Ok(false) => {
+                    state_arc.reaction_in_flight.store(false, Ordering::Release);
+                    finish_llm(&state_arc);
+                    return;
+                }
+                Err(error) => {
+                    eprintln!("Thumbnail update error: {}", error);
+                    state_arc.reaction_in_flight.store(false, Ordering::Release);
+                    finish_llm(&state_arc);
+                    return;
+                }
+            }
+
+            let transcript_chunks = match audio::take_pending_transcript_chunks(&state_arc) {
+                Ok(chunks) => chunks,
+                Err(error) => {
+                    eprintln!("Transcript buffer error: {}", error);
+                    Vec::new()
+                }
+            };
+
+            match reaction::generate_and_save_reaction(&state_arc, &image_data, &transcript_chunks).await {
+                Ok(Some(text)) => {
+                    let _ = app_handle.emit("overlay-reaction", serde_json::json!({ "text": text }));
+                }
+                Ok(None) => {}
+                Err(error) => eprintln!("Reaction error: {}", error),
+            }
+            state_arc.reaction_in_flight.store(false, Ordering::Release);
+            finish_llm(&state_arc);
+        });
+    });
+    {
+        let mut capture_handle = state.capture_handle.lock().map_err(|e| e.to_string())?;
+        *capture_handle = Some(handle);
+    }
+
     Ok(session_id)
 }
 
@@ -217,6 +349,8 @@ pub fn stop_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
 
     let session_id = current.session_id.clone().ok_or("No session id")?;
     let ended_at = Utc::now().to_rfc3339();
+
+    next_capture_generation(state);
 
     if let Ok(mut handle_guard) = state.capture_handle.lock() {
         if let Some(handle) = handle_guard.take() {
@@ -291,6 +425,7 @@ pub fn stop_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
 
     overlay::hide_overlay(app).map_err(|e| e.to_string())?;
     reset_llm_state(state);
+    reset_thumbnail(state)?;
     clear_ai_preview(app, state)?;
 
     let idle_state = SessionState::default();
