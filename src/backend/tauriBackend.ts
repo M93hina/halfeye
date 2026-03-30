@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  ReactionLog,
   SessionState,
   SessionStateChangedEvent,
   Settings,
@@ -24,6 +25,10 @@ export class TauriBackend implements BackendAdapter {
 
   getSessionState() {
     return invoke<SessionState>("get_session_state");
+  }
+
+  listReactions(sessionId: string) {
+    return invoke<ReactionLog[]>("list_reactions", { sessionId });
   }
 
   listSummaries() {

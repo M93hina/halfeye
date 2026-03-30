@@ -68,11 +68,7 @@ fn write_bool_setting(conn: &rusqlite::Connection, key: &str, value: bool) -> Re
     Ok(())
 }
 
-fn write_string_setting(
-    conn: &rusqlite::Connection,
-    key: &str,
-    value: &str,
-) -> Result<(), String> {
+fn write_string_setting(conn: &rusqlite::Connection, key: &str, value: &str) -> Result<(), String> {
     conn.execute(
         "UPDATE settings SET value = ?1 WHERE key = ?2",
         params![value, key],
@@ -89,11 +85,7 @@ fn load_settings(conn: &rusqlite::Connection) -> Result<Settings, String> {
         time_display_mode: read_string_setting(conn, "time_display_mode", "absolute")?,
         summaries_sort_order: read_string_setting(conn, "summaries_sort_order", "newest")?,
         summary_font_size: read_string_setting(conn, "summary_font_size", "medium")?,
-        active_session_emphasis: read_string_setting(
-            conn,
-            "active_session_emphasis",
-            "strong",
-        )?,
+        active_session_emphasis: read_string_setting(conn, "active_session_emphasis", "strong")?,
         theme_mode: read_string_setting(conn, "theme_mode", "light")?,
     })
 }

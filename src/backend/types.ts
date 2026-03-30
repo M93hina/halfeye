@@ -1,4 +1,5 @@
 import type {
+  ReactionLog,
   SessionState,
   SessionStateChangedEvent,
   Settings,
@@ -16,6 +17,7 @@ export interface BackendAdapter {
   startSession(): Promise<string>;
   stopSession(): Promise<void>;
   getSessionState(): Promise<SessionState>;
+  listReactions(sessionId: string): Promise<ReactionLog[]>;
   listSummaries(): Promise<SummaryListItem[]>;
   getSummary(sessionId: string): Promise<Summary>;
   getSettings(): Promise<Settings>;

@@ -17,6 +17,17 @@ export interface Summary {
   created_at: string;
 }
 
+export type ReactionActionType = "react" | "silent";
+
+export interface ReactionLog {
+  id: string;
+  session_id: string;
+  timestamp: string;
+  action_type: ReactionActionType;
+  observation_summary: string;
+  text: string;
+}
+
 export type TimeDisplayMode = "absolute" | "relative";
 export type SummariesSortOrder = "newest" | "oldest";
 export type SummaryFontSize = "small" | "medium" | "large";

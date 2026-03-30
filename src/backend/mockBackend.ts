@@ -1,4 +1,5 @@
 import type {
+  ReactionLog,
   SessionState,
   SessionStateChangedEvent,
   Settings,
@@ -39,6 +40,55 @@ function createSeededSummaries(): Summary[] {
   ];
 }
 
+function createSeededReactions(): Record<string, ReactionLog[]> {
+  return {
+    "session-demo-design-review": [
+      {
+        id: "reaction-demo-design-1",
+        session_id: "session-demo-design-review",
+        timestamp: "2026-03-29T12:15:00.000Z",
+        action_type: "react",
+        observation_summary: "デザインレビュー用の画面が開かれ、overlay の余白について議論している。",
+        text: "余白の話が中心ですね。overlay の存在感がテーマに見えます。",
+      },
+      {
+        id: "reaction-demo-design-2",
+        session_id: "session-demo-design-review",
+        timestamp: "2026-03-29T12:22:00.000Z",
+        action_type: "silent",
+        observation_summary: "同じ資料を読み続けており、目立った画面変化はない。",
+        text: "",
+      },
+      {
+        id: "reaction-demo-design-3",
+        session_id: "session-demo-design-review",
+        timestamp: "2026-03-29T12:28:00.000Z",
+        action_type: "react",
+        observation_summary: "セッション中と停止後で UI のトーンを切り替える話に移っている。",
+        text: "実行中と停止後で印象を切り替える方針にまとまりそうです。",
+      },
+    ],
+    "session-demo-pairing": [
+      {
+        id: "reaction-demo-pairing-1",
+        session_id: "session-demo-pairing",
+        timestamp: "2026-03-28T03:55:00.000Z",
+        action_type: "react",
+        observation_summary: "コーディングしながら companion AI の常時表示を試している。",
+        text: "作業の邪魔をしない companion 体験を検証している感じですね。",
+      },
+      {
+        id: "reaction-demo-pairing-2",
+        session_id: "session-demo-pairing",
+        timestamp: "2026-03-28T04:03:00.000Z",
+        action_type: "silent",
+        observation_summary: "同じコード画面のまま読み込みが続いている。",
+        text: "",
+      },
+    ],
+  };
+}
+
 export class MockBackend implements BackendAdapter {
   readonly kind = "mock" as const;
 
@@ -53,6 +103,7 @@ export class MockBackend implements BackendAdapter {
     theme_mode: "light",
   };
   private summaries = createSeededSummaries();
+  private reactionsBySession = createSeededReactions();
   private sessionStateListeners = new Set<
     (event: SessionStateChangedEvent) => void | Promise<void>
   >();
@@ -110,6 +161,25 @@ export class MockBackend implements BackendAdapter {
           "ここを Rust 実装に差し替えても、UI 側は adapter 越しのまま利用できます。",
         ].join("\n"),
       };
+      const sessionId = finishingSession.session_id ?? `session-${createdAt}`;
+      this.reactionsBySession[sessionId] = [
+        {
+          id: `reaction-${crypto.randomUUID().slice(0, 8)}`,
+          session_id: sessionId,
+          timestamp: new Date(Date.now() - 45_000).toISOString(),
+          action_type: "react",
+          observation_summary: "モックセッション開始直後の画面を観察し、セッションが始まったことを確認した。",
+          text: "セッションが始まりました。モックでも履歴が残ります。",
+        },
+        {
+          id: `reaction-${crypto.randomUUID().slice(0, 8)}`,
+          session_id: sessionId,
+          timestamp: new Date(Date.now() - 20_000).toISOString(),
+          action_type: "silent",
+          observation_summary: "大きな変化がなく、同じ作業を継続しているように見える。",
+          text: "",
+        },
+      ];
 
       this.summaries = [summary, ...this.summaries];
       this.sessionState = createIdleState();
@@ -120,6 +190,12 @@ export class MockBackend implements BackendAdapter {
 
   async getSessionState() {
     return { ...this.sessionState };
+  }
+
+  async listReactions(sessionId: string) {
+    return (this.reactionsBySession[sessionId] ?? []).map((reaction) => ({
+      ...reaction,
+    }));
   }
 
   async listSummaries() {

@@ -5,7 +5,10 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 #[tauri::command]
-pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<String, String> {
+pub async fn start_session(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
     session::start_session(&app, &state)
 }
 

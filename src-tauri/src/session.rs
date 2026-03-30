@@ -5,6 +5,7 @@ use crate::state::{AppState, SessionState, SessionStatus};
 use crate::summary;
 use chrono::Utc;
 use rusqlite::params;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
@@ -28,18 +29,29 @@ pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String
 
     let state_arc = state.self_arc.upgrade().ok_or("AppState Arc not set")?;
     let app_handle = app.clone();
-    let handle = capture::start_capture_loop(10, move |image_data| {
-        let state_arc = state_arc.clone();
-        let app_handle = app_handle.clone();
-        tokio::spawn(async move {
-            match reaction::generate_and_save_reaction(&state_arc, &image_data).await {
-                Ok(text) => {
-                    let _ = app_handle.emit("overlay-reaction", serde_json::json!({ "text": text }));
+    let state_for_gate = state_arc.clone();
+    let handle = capture::start_capture_loop(
+        10,
+        move || !state_for_gate.reaction_in_flight.load(Ordering::Acquire),
+        move |image_data| {
+            let state_arc = state_arc.clone();
+            let app_handle = app_handle.clone();
+            state_arc.reaction_in_flight.store(true, Ordering::Release);
+            tokio::spawn(async move {
+                let result = reaction::generate_and_save_reaction(&state_arc, &image_data).await;
+                state_arc.reaction_in_flight.store(false, Ordering::Release);
+
+                match result {
+                    Ok(Some(text)) => {
+                        let _ = app_handle
+                            .emit("overlay-reaction", serde_json::json!({ "text": text }));
+                    }
+                    Ok(None) => {}
+                    Err(e) => eprintln!("Reaction error: {}", e),
                 }
-                Err(e) => eprintln!("Reaction error: {}", e),
-            }
-        });
-    });
+            });
+        },
+    );
     {
         let mut capture_handle = state.capture_handle.lock().map_err(|e| e.to_string())?;
         *capture_handle = Some(handle);
@@ -107,6 +119,10 @@ pub fn stop_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
     let app_clone = app.clone();
     let sid = session_id.clone();
     tokio::spawn(async move {
+        while state_arc.reaction_in_flight.load(Ordering::Acquire) {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
         match summary::generate_summary(&state_arc, &sid).await {
             Ok(()) => {
                 let text = {
@@ -120,7 +136,10 @@ pub fn stop_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
                     })
                 };
                 if let Some(text) = text {
-                    let _ = app_clone.emit("summary_ready", serde_json::json!({ "session_id": sid, "text": text }));
+                    let _ = app_clone.emit(
+                        "summary_ready",
+                        serde_json::json!({ "session_id": sid, "text": text }),
+                    );
                 }
             }
             Err(e) => eprintln!("Summary generation error: {}", e),

@@ -5,17 +5,20 @@ use chrono::Utc;
 use rusqlite::params;
 use uuid::Uuid;
 
-pub async fn generate_summary(
-    state: &AppState,
-    session_id: &str,
-) -> Result<(), String> {
-    let api_key = std::env::var("GEMINI_API_KEY").map_err(|_| "GEMINI_API_KEY not set".to_string())?;
+pub async fn generate_summary(state: &AppState, session_id: &str) -> Result<(), String> {
+    let api_key =
+        std::env::var("GEMINI_API_KEY").map_err(|_| "GEMINI_API_KEY not set".to_string())?;
     let client = GeminiClient::new(api_key);
 
     let reactions_text = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
-            .prepare("SELECT text, timestamp FROM reactions WHERE session_id = ?1 ORDER BY timestamp")
+            .prepare(
+                "SELECT text, timestamp
+                 FROM reactions
+                 WHERE session_id = ?1 AND action_type = 'react'
+                 ORDER BY timestamp",
+            )
             .map_err(|e| e.to_string())?;
         let rows: Vec<String> = stmt
             .query_map(params![session_id], |row| {
@@ -30,7 +33,10 @@ pub async fn generate_summary(
     };
 
     if reactions_text.is_empty() {
-        eprintln!("No reactions found for session {}, skipping summary", session_id);
+        eprintln!(
+            "No reactions found for session {}, skipping summary",
+            session_id
+        );
         return Ok(());
     }
 

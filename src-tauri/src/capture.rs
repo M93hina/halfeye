@@ -30,8 +30,13 @@ pub fn capture_screenshot() -> Result<String, String> {
     Ok(base64_str)
 }
 
-pub fn start_capture_loop<F>(interval_secs: u64, on_capture: F) -> CaptureHandle
+pub fn start_capture_loop<F, G>(
+    interval_secs: u64,
+    should_capture: G,
+    on_capture: F,
+) -> CaptureHandle
 where
+    G: Fn() -> bool + Send + 'static,
     F: Fn(String) + Send + 'static,
 {
     let cancel = CancellationToken::new();
@@ -42,11 +47,15 @@ where
             if cancel_clone.is_cancelled() {
                 break;
             }
-            match capture_screenshot() {
-                Ok(data) => on_capture(data),
-                Err(e) => {
-                    eprintln!("Capture error: {}", e);
+            if should_capture() {
+                match capture_screenshot() {
+                    Ok(data) => on_capture(data),
+                    Err(e) => {
+                        eprintln!("Capture error: {}", e);
+                    }
                 }
+            } else {
+                eprintln!("Capture skipped: reaction still in flight");
             }
             tokio::select! {
                 _ = tokio::time::sleep(std::time::Duration::from_secs(interval_secs)) => {}
@@ -64,8 +73,7 @@ mod tests {
 
     #[test]
     fn converts_rgba_image_to_jpeg_after_dropping_alpha() {
-        let rgba_image =
-            image::RgbaImage::from_fn(2, 2, |_x, _y| image::Rgba([10, 20, 30, 128]));
+        let rgba_image = image::RgbaImage::from_fn(2, 2, |_x, _y| image::Rgba([10, 20, 30, 128]));
         let rgb_image = image::DynamicImage::ImageRgba8(rgba_image).to_rgb8();
 
         let mut buf = Cursor::new(Vec::new());
@@ -73,6 +81,9 @@ mod tests {
             .write_to(&mut buf, ImageFormat::Jpeg)
             .expect("RGBA image converted to RGB should encode as JPEG");
 
-        assert!(!buf.into_inner().is_empty(), "JPEG buffer should not be empty");
+        assert!(
+            !buf.into_inner().is_empty(),
+            "JPEG buffer should not be empty"
+        );
     }
 }
