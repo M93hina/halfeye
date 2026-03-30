@@ -1,7 +1,9 @@
 import type {
+  AudioTranscriptionStatus,
   AiPreviewState,
   AiPreviewUpdatedEvent,
   ReactionLog,
+  StartSessionOptions,
   SessionState,
   SessionStateChangedEvent,
   Settings,
@@ -16,6 +18,7 @@ function createIdleState(): SessionState {
     status: "idle",
     session_id: null,
     started_at: null,
+    audio_transcription_enabled: false,
   };
 }
 
@@ -132,7 +135,7 @@ export class MockBackend implements BackendAdapter {
   private previewTimer: number | null = null;
   private previewTick = 0;
 
-  async startSession() {
+  async startSession(options: StartSessionOptions) {
     if (this.sessionState.status !== "idle" && this.sessionState.session_id) {
       return this.sessionState.session_id;
     }
@@ -142,6 +145,7 @@ export class MockBackend implements BackendAdapter {
       status: "active",
       session_id: sessionId,
       started_at: new Date().toISOString(),
+      audio_transcription_enabled: options.audio_transcription,
     };
 
     this.emitSessionStateChanged();
@@ -173,12 +177,16 @@ export class MockBackend implements BackendAdapter {
       const startedAt = finishingSession.started_at
         ? new Date(finishingSession.started_at).toLocaleString("ja-JP")
         : "不明";
+      const audioLine = finishingSession.audio_transcription_enabled
+        ? "音声文字起こしを有効にして、会話内容もまとめに反映しました。"
+        : "音声文字起こしは無効で、画面観察のみでまとめを作成しました。";
       const summary: Summary = {
         session_id: finishingSession.session_id ?? `session-${createdAt}`,
         title: deriveSummaryTitle(
           [
             `セッション ${finishingSession.session_id ?? "unknown"} を終了しました。`,
             `開始時刻: ${startedAt}`,
+            audioLine,
             "モック連携が summary_ready イベントを発火し、一覧と詳細を再取得します。",
             "ここを Rust 実装に差し替えても、UI 側は adapter 越しのまま利用できます。",
           ].join("\n"),
@@ -188,6 +196,7 @@ export class MockBackend implements BackendAdapter {
         text: [
           `セッション ${finishingSession.session_id ?? "unknown"} を終了しました。`,
           `開始時刻: ${startedAt}`,
+          audioLine,
           "モック連携が summary_ready イベントを発火し、一覧と詳細を再取得します。",
           "ここを Rust 実装に差し替えても、UI 側は adapter 越しのまま利用できます。",
         ].join("\n"),
@@ -199,8 +208,12 @@ export class MockBackend implements BackendAdapter {
           session_id: sessionId,
           timestamp: new Date(Date.now() - 45_000).toISOString(),
           action_type: "react",
-          observation_summary: "モックセッション開始直後の画面を観察し、セッションが始まったことを確認した。",
-          text: "セッションが始まりました。モックでも履歴が残ります。",
+          observation_summary: finishingSession.audio_transcription_enabled
+            ? "モックセッション開始直後の画面と会話内容を観察し、セッションが始まったことを確認した。"
+            : "モックセッション開始直後の画面を観察し、セッションが始まったことを確認した。",
+          text: finishingSession.audio_transcription_enabled
+            ? "セッションが始まりました。音声文字起こしも有効です。"
+            : "セッションが始まりました。モックでも履歴が残ります。",
         },
         {
           id: `reaction-${crypto.randomUUID().slice(0, 8)}`,
@@ -223,6 +236,14 @@ export class MockBackend implements BackendAdapter {
 
   async getSessionState() {
     return { ...this.sessionState };
+  }
+
+  async getAudioTranscriptionStatus(): Promise<AudioTranscriptionStatus> {
+    return {
+      available: true,
+      model_path: "mock://ggml-small.bin",
+      reason: null,
+    };
   }
 
   async getAiPreviewState() {

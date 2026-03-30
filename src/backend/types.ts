@@ -1,7 +1,9 @@
 import type {
+  AudioTranscriptionStatus,
   AiPreviewState,
   AiPreviewUpdatedEvent,
   ReactionLog,
+  StartSessionOptions,
   SessionState,
   SessionStateChangedEvent,
   Settings,
@@ -16,9 +18,10 @@ export type Unsubscribe = () => void;
 
 export interface BackendAdapter {
   readonly kind: BackendMode;
-  startSession(): Promise<string>;
+  startSession(options: StartSessionOptions): Promise<string>;
   stopSession(): Promise<void>;
   getSessionState(): Promise<SessionState>;
+  getAudioTranscriptionStatus(): Promise<AudioTranscriptionStatus>;
   getAiPreviewState(): Promise<AiPreviewState>;
   listReactions(sessionId: string): Promise<ReactionLog[]>;
   listSummaries(): Promise<SummaryListItem[]>;

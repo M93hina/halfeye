@@ -1,3 +1,4 @@
+mod audio;
 mod capture;
 mod commands;
 mod db;
@@ -25,7 +26,7 @@ pub fn run() {
                 .expect("Failed to resolve app data dir");
             std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
             let db = db::init_db(&app_data_dir).expect("Failed to initialize database");
-            let state = AppState::new(db);
+            let state = AppState::new(db, app_data_dir);
             app.manage(state);
             overlay::create_overlay(app.handle())?;
             Ok(())
@@ -34,6 +35,7 @@ pub fn run() {
             commands::session::start_session,
             commands::session::stop_session,
             commands::session::get_session_state,
+            commands::session::get_audio_transcription_status,
             commands::overlay::resize_overlay,
             commands::preview::get_ai_preview_state,
             commands::reactions::list_reactions,

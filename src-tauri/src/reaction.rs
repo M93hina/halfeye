@@ -1,3 +1,4 @@
+use crate::audio::TranscriptChunk;
 use crate::llm::gemini::GeminiClient;
 use crate::llm::{ActionType, LlmClient, ReactionContext};
 use crate::state::AppState;
@@ -19,6 +20,7 @@ pub struct ReactionLog {
 pub async fn generate_and_save_reaction(
     state: &AppState,
     image_base64: &str,
+    transcript_chunks: &[TranscriptChunk],
 ) -> Result<Option<String>, String> {
     let api_key =
         std::env::var("GEMINI_API_KEY").map_err(|_| "GEMINI_API_KEY not set".to_string())?;
@@ -30,7 +32,9 @@ pub async fn generate_and_save_reaction(
     };
 
     let context = list_recent_reaction_contexts(state, &session_id, 5)?;
-    let output = client.generate_reaction(image_base64, &context).await?;
+    let output = client
+        .generate_reaction(image_base64, transcript_chunks, &context)
+        .await?;
 
     let reaction_id = Uuid::new_v4().to_string();
     let timestamp = Utc::now().to_rfc3339();

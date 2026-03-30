@@ -6,6 +6,7 @@ import { useSessionStore } from "./store/sessionStore";
 import type {
   ActiveSessionEmphasis,
   ReactionLog,
+  StartSessionOptions,
   SessionStatus,
   SettingsPatch,
   SummaryFontSize,
@@ -164,6 +165,9 @@ function getStatusTone(
 
 function SessionTab() {
   const aiPreview = useSessionStore((state) => state.aiPreview);
+  const audioTranscriptionStatus = useSessionStore(
+    (state) => state.audioTranscriptionStatus,
+  );
   const settings = useSessionStore((state) => state.settings);
   const sessionState = useSessionStore((state) => state.sessionState);
   const isSessionActionPending = useSessionStore(
@@ -182,6 +186,15 @@ function SessionTab() {
   const canStart = sessionState.status === "idle" && !isSessionActionPending;
   const canStop = sessionState.status === "active" && !isSessionActionPending;
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
+
+  const currentAudioTranscriptionEnabled =
+    sessionState.status === "idle"
+      ? audioTranscriptionEnabled
+      : sessionState.audio_transcription_enabled;
+  const canToggleAudioTranscription =
+    sessionState.status === "idle" &&
+    (audioTranscriptionStatus?.available ?? backend.kind === "mock");
 
   useEffect(() => {
     if (!aiPreview.image_base64 || !aiPreview.mime_type) {
@@ -205,7 +218,12 @@ function SessionTab() {
     clearErrorMessage();
 
     try {
-      await backend.startSession();
+      const options: StartSessionOptions = {
+        audio_transcription:
+          audioTranscriptionEnabled &&
+          (audioTranscriptionStatus?.available ?? backend.kind === "mock"),
+      };
+      await backend.startSession(options);
       setSessionState(await backend.getSessionState());
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "セッションを開始できませんでした。"));
@@ -301,6 +319,103 @@ function SessionTab() {
           }
           value={sessionState.session_id ?? "--"}
         />
+      </div>
+
+      <div
+        className={cx(
+          "mt-6 rounded-[1.25rem] border p-4",
+          isDark
+            ? "border-slate-800 bg-slate-800/70"
+            : "border-stone-200 bg-stone-50/80",
+        )}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div
+              className={cx(
+              "text-sm font-medium",
+              isDark ? "text-slate-100" : "text-slate-900",
+            )}
+          >
+              音声文字起こしを使う
+            </div>
+            <div
+              className={cx(
+                "mt-1 text-xs leading-5",
+                isDark ? "text-slate-400" : "text-slate-500",
+              )}
+            >
+              ON にすると、画像を AI に渡すたびに直前までの会話内容も一緒に送ります。
+            </div>
+          </div>
+
+          <label
+            className={cx(
+              "inline-flex items-center gap-3 rounded-full border px-4 py-2 text-sm",
+              canToggleAudioTranscription ? "cursor-pointer" : "cursor-not-allowed opacity-70",
+              isDark
+                ? "border-slate-700 bg-slate-900 text-slate-200"
+                : "border-stone-200 bg-white text-slate-700",
+            )}
+          >
+            <input
+              checked={audioTranscriptionEnabled}
+              className="sr-only"
+              disabled={!canToggleAudioTranscription}
+              onChange={(event) => setAudioTranscriptionEnabled(event.target.checked)}
+              type="checkbox"
+            />
+            <span
+              className={cx(
+                "relative inline-flex h-7 w-12 rounded-full border transition",
+                audioTranscriptionEnabled
+                  ? "border-emerald-300 bg-emerald-400"
+                  : isDark
+                    ? "border-slate-600 bg-slate-700"
+                    : "border-stone-300 bg-stone-200",
+              )}
+            >
+              <span
+                className={cx(
+                  "absolute top-0.5 h-[1.375rem] w-[1.375rem] rounded-full bg-white shadow-sm transition",
+                  audioTranscriptionEnabled ? "left-6" : "left-0.5",
+                )}
+              />
+            </span>
+            <span>{audioTranscriptionEnabled ? "ON" : "OFF"}</span>
+          </label>
+        </div>
+
+        <div className="mt-4">
+          <MetricCard
+            label="音声文字起こし"
+            tone={
+              currentAudioTranscriptionEnabled && (audioTranscriptionStatus?.available ?? true)
+                ? getStatusTone("active", emphasis, isDark)
+                : isDark
+                  ? "border-slate-700 bg-slate-900 text-slate-200"
+                  : "border-stone-200 bg-white text-slate-700"
+            }
+            value={
+              audioTranscriptionStatus?.available === false
+                ? "利用不可"
+                : currentAudioTranscriptionEnabled
+                  ? "有効"
+                  : "無効"
+            }
+          />
+        </div>
+
+        <p
+          className={cx(
+            "mt-4 text-xs leading-5",
+            isDark ? "text-slate-500" : "text-slate-500",
+          )}
+        >
+          {audioTranscriptionStatus?.available === false
+            ? `音声文字起こしはまだ使えません。${audioTranscriptionStatus.reason ?? ""}`
+            : "音声文字起こしを使うには、`WHISPER_MODEL_PATH` を設定するか、初回セットアップで `ggml-small.bin` を配置してください。"}
+        </p>
       </div>
 
       <div
@@ -1022,6 +1137,9 @@ export function App() {
   const setErrorMessage = useSessionStore((state) => state.setErrorMessage);
   const clearErrorMessage = useSessionStore((state) => state.clearErrorMessage);
   const setSessionState = useSessionStore((state) => state.setSessionState);
+  const setAudioTranscriptionStatus = useSessionStore(
+    (state) => state.setAudioTranscriptionStatus,
+  );
   const setAiPreview = useSessionStore((state) => state.setAiPreview);
   const setSettings = useSessionStore((state) => state.setSettings);
   const setSummaries = useSessionStore((state) => state.setSummaries);
@@ -1083,14 +1201,16 @@ export function App() {
     clearErrorMessage();
 
     try {
-      const [nextSessionState, nextAiPreview, nextSettings, list] = await Promise.all([
+      const [nextSessionState, nextAudioStatus, nextAiPreview, nextSettings, list] = await Promise.all([
         backend.getSessionState(),
+        backend.getAudioTranscriptionStatus(),
         backend.getAiPreviewState(),
         backend.getSettings(),
         backend.listSummaries(),
       ]);
 
       setSessionState(nextSessionState);
+      setAudioTranscriptionStatus(nextAudioStatus);
       setAiPreview(nextAiPreview);
       setSettings(nextSettings);
       setSummaries(list);

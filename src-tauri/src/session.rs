@@ -1,7 +1,8 @@
+use crate::audio;
 use crate::capture;
 use crate::overlay;
 use crate::reaction;
-use crate::state::{AiPreviewState, AppState, SessionState, SessionStatus};
+use crate::state::{AiPreviewState, AppState, SessionState, SessionStatus, StartSessionOptions};
 use crate::summary;
 use chrono::Utc;
 use rusqlite::params;
@@ -173,22 +174,42 @@ fn is_current_generation(state: &AppState, generation: u64) -> bool {
     state.capture_generation.load(Ordering::Acquire) == generation
 }
 
-pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String> {
+pub fn start_session(
+    app: &AppHandle,
+    state: &AppState,
+    options: StartSessionOptions,
+) -> Result<String, String> {
     let current = state.session_rx.borrow().clone();
     if current.status != SessionStatus::Idle {
         return Err("Session already active".into());
     }
 
+    audio::clear_transcript_chunks(state)?;
     let session_id = Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
+    let audio_enabled = options.audio_transcription;
+    let pending_audio_handle = if audio_enabled {
+        Some(audio::start_transcription_worker(state)?)
+    } else {
+        None
+    };
 
     {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT INTO sessions (id, started_at, status) VALUES (?1, ?2, ?3)",
-            params![session_id, started_at, "active"],
+            "INSERT INTO sessions (id, started_at, status, audio_enabled) VALUES (?1, ?2, ?3, ?4)",
+            params![session_id, started_at, "active", if audio_enabled { 1 } else { 0 }],
         )
         .map_err(|e| e.to_string())?;
+    }
+
+    {
+        let mut audio_runtime = state.audio_runtime.lock().map_err(|e| e.to_string())?;
+        audio_runtime.transcription_enabled = audio_enabled;
+    }
+    if let Some(audio_handle) = pending_audio_handle {
+        let mut handle_guard = state.audio_handle.lock().map_err(|e| e.to_string())?;
+        *handle_guard = Some(audio_handle);
     }
 
     let capture_generation = next_capture_generation(state);
@@ -201,6 +222,7 @@ pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String
         status: SessionStatus::Active,
         session_id: Some(session_id.clone()),
         started_at: Some(started_at),
+        audio_transcription_enabled: audio_enabled,
     };
     state
         .session_tx
@@ -292,7 +314,15 @@ pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String
                 }
             }
 
-            match reaction::generate_and_save_reaction(&state_arc, &image_data).await {
+            let transcript_chunks = match audio::take_pending_transcript_chunks(&state_arc) {
+                Ok(chunks) => chunks,
+                Err(error) => {
+                    eprintln!("Transcript buffer error: {}", error);
+                    Vec::new()
+                }
+            };
+
+            match reaction::generate_and_save_reaction(&state_arc, &image_data, &transcript_chunks).await {
                 Ok(Some(text)) => {
                     let _ = app_handle.emit("overlay-reaction", serde_json::json!({ "text": text }));
                 }
@@ -326,6 +356,16 @@ pub fn stop_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
         if let Some(handle) = handle_guard.take() {
             handle.cancel();
         }
+    }
+
+    if let Ok(mut audio_handle_guard) = state.audio_handle.lock() {
+        if let Some(handle) = audio_handle_guard.take() {
+            handle.cancel();
+        }
+    }
+    let _ = audio::clear_transcript_chunks(state);
+    if let Ok(mut audio_runtime) = state.audio_runtime.lock() {
+        audio_runtime.transcription_enabled = false;
     }
 
     let ending_state = SessionState {
