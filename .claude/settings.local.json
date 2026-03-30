@@ -5,7 +5,8 @@
       "Bash(git fetch:*)",
       "Bash(npx tsc:*)",
       "Bash(cargo check:*)",
-      "Bash(cargo build:*)"
+      "Bash(cargo build:*)",
+      "WebFetch(domain:blog.logrocket.com)"
     ]
   }
 }

@@ -19,10 +19,11 @@ impl CaptureHandle {
 pub fn capture_screenshot() -> Result<String, String> {
     let monitors = Monitor::all().map_err(|e| e.to_string())?;
     let monitor = monitors.first().ok_or("No monitor found")?;
-    let image = monitor.capture_image().map_err(|e| e.to_string())?;
+    let rgba_image = monitor.capture_image().map_err(|e| e.to_string())?;
+    let rgb_image = image::DynamicImage::ImageRgba8(rgba_image).to_rgb8();
 
     let mut buf = Cursor::new(Vec::new());
-    image
+    rgb_image
         .write_to(&mut buf, ImageFormat::Jpeg)
         .map_err(|e| e.to_string())?;
     let base64_str = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
@@ -55,4 +56,23 @@ where
     });
 
     CaptureHandle { cancel, task }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_rgba_image_to_jpeg_after_dropping_alpha() {
+        let rgba_image =
+            image::RgbaImage::from_fn(2, 2, |_x, _y| image::Rgba([10, 20, 30, 128]));
+        let rgb_image = image::DynamicImage::ImageRgba8(rgba_image).to_rgb8();
+
+        let mut buf = Cursor::new(Vec::new());
+        rgb_image
+            .write_to(&mut buf, ImageFormat::Jpeg)
+            .expect("RGBA image converted to RGB should encode as JPEG");
+
+        assert!(!buf.into_inner().is_empty(), "JPEG buffer should not be empty");
+    }
 }
