@@ -559,7 +559,8 @@ export function App() {
       unsubscribeSession();
       unsubscribeSummary();
     };
-  }, [bootstrapApp, openSummariesTab, refreshSessionState, refreshSummaries, setErrorMessage]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- useEffectEvent は安定参照であり依存配列不要
+  }, []);
 
   useEffect(() => {
     let isActive = true;
