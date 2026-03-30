@@ -32,6 +32,22 @@ pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String
         let state_arc = state_arc.clone();
         let app_handle = app_handle.clone();
         tokio::spawn(async move {
+            let enabled = {
+                let conn = match state_arc.db.lock() {
+                    Ok(c) => c,
+                    Err(_) => return,
+                };
+                conn.query_row(
+                    "SELECT value FROM settings WHERE key = 'reaction_enabled'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .map(|v| v == "true")
+                .unwrap_or(true)
+            };
+            if !enabled {
+                return;
+            }
             match reaction::generate_and_save_reaction(&state_arc, &image_data).await {
                 Ok(text) => {
                     let _ = app_handle.emit("overlay-reaction", serde_json::json!({ "text": text }));

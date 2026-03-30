@@ -520,7 +520,7 @@ export function App() {
         return;
       }
 
-      unsubscribeSession = await backend.subscribeSessionStateChanged(
+      const unsub1 = await backend.subscribeSessionStateChanged(
         async () => {
           try {
             await refreshSessionState();
@@ -531,8 +531,13 @@ export function App() {
           }
         },
       );
+      if (!isActive) {
+        unsub1();
+        return;
+      }
+      unsubscribeSession = unsub1;
 
-      unsubscribeSummary = await backend.subscribeSummaryReady(async (event) => {
+      const unsub2 = await backend.subscribeSummaryReady(async (event) => {
         try {
           await refreshSummaries(event.session_id);
           openSummariesTab();
@@ -542,6 +547,11 @@ export function App() {
           );
         }
       });
+      if (!isActive) {
+        unsub2();
+        return;
+      }
+      unsubscribeSummary = unsub2;
     })();
 
     return () => {
