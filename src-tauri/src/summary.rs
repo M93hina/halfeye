@@ -39,7 +39,7 @@ pub async fn generate_summary(
         reactions_text
     );
 
-    let summary_text = client.generate_reaction("", &prompt).await?;
+    let summary_text = client.generate_text(&prompt).await?;
 
     let summary_id = Uuid::new_v4().to_string();
     let created_at = Utc::now().to_rfc3339();

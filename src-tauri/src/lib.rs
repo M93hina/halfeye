@@ -13,6 +13,9 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // プロジェクトルートの .env を読み込む（存在しない場合はスキップ）
+    let _ = dotenvy::dotenv();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -24,6 +27,7 @@ pub fn run() {
             let db = db::init_db(&app_data_dir).expect("Failed to initialize database");
             let state = AppState::new(db);
             app.manage(state);
+            overlay::create_overlay(app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -8,7 +8,7 @@ use uuid::Uuid;
 pub async fn generate_and_save_reaction(
     state: &AppState,
     image_base64: &str,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let api_key = std::env::var("GEMINI_API_KEY").map_err(|_| "GEMINI_API_KEY not set".to_string())?;
     let client = GeminiClient::new(api_key);
 
@@ -17,7 +17,7 @@ pub async fn generate_and_save_reaction(
         session.session_id.clone().ok_or("No active session")?
     };
 
-    let text = client.generate_reaction(image_base64, "").await?;
+    let text = client.generate_reaction(image_base64).await?;
 
     let reaction_id = Uuid::new_v4().to_string();
     let timestamp = Utc::now().to_rfc3339();
@@ -32,5 +32,5 @@ pub async fn generate_and_save_reaction(
     }
 
     eprintln!("Reaction generated: {}", text);
-    Ok(())
+    Ok(text)
 }

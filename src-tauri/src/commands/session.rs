@@ -5,12 +5,12 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 #[tauri::command]
-pub fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<String, String> {
+pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<String, String> {
     session::start_session(&app, &state)
 }
 
 #[tauri::command]
-pub fn stop_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn stop_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     session::stop_session(&app, &state)
 }
 

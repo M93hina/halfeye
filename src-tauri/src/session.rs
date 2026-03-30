@@ -26,7 +26,7 @@ pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String
         .map_err(|e| e.to_string())?;
     }
 
-    let state_arc = state.self_arc.clone().ok_or("AppState Arc not set")?;
+    let state_arc = state.self_arc.upgrade().ok_or("AppState Arc not set")?;
     let app_handle = app.clone();
     let handle = capture::start_capture_loop(10, move |image_data| {
         let state_arc = state_arc.clone();
@@ -45,8 +45,6 @@ pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String
         *capture_handle = Some(handle);
     }
 
-    overlay::create_overlay(app)?;
-
     let new_state = SessionState {
         status: SessionStatus::Active,
         session_id: Some(session_id.clone()),
@@ -62,6 +60,7 @@ pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String
         serde_json::json!({ "status": "active" }),
     )
     .map_err(|e| e.to_string())?;
+    overlay::show_overlay(app).map_err(|e| e.to_string())?;
 
     Ok(session_id)
 }
@@ -104,7 +103,7 @@ pub fn stop_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     }
 
-    let state_arc = state.self_arc.clone().ok_or("AppState Arc not set")?;
+    let state_arc = state.self_arc.upgrade().ok_or("AppState Arc not set")?;
     let app_clone = app.clone();
     let sid = session_id.clone();
     tokio::spawn(async move {
@@ -128,7 +127,7 @@ pub fn stop_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
         }
     });
 
-    overlay::destroy_overlay(app)?;
+    overlay::hide_overlay(app).map_err(|e| e.to_string())?;
 
     let idle_state = SessionState::default();
     state
