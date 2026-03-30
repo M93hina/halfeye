@@ -264,6 +264,17 @@ export class MockBackend implements BackendAdapter {
     return { ...summary };
   }
 
+  async regenerateSummaryTitle(sessionId: string) {
+    const summary = this.summaries.find((item) => item.session_id === sessionId);
+
+    if (!summary) {
+      throw new Error(`セッション ${sessionId} のまとめが見つかりません。`);
+    }
+
+    summary.title = deriveSummaryTitle(summary.text, sessionId);
+    return { ...summary };
+  }
+
   async getSettings() {
     return { ...this.settings };
   }

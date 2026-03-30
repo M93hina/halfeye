@@ -1,3 +1,4 @@
+use crate::summary;
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -92,4 +93,51 @@ fn normalize_summary_title(title: &str, fallback: &str) -> String {
     let trimmed = title.trim();
     let normalized = if trimmed.is_empty() { fallback } else { trimmed };
     normalized.chars().take(40).collect()
+}
+
+#[tauri::command]
+pub async fn regenerate_summary_title(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Result<Summary, String> {
+    let summary_text = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT text FROM summaries WHERE session_id = ?1",
+            [&session_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| e.to_string())?
+    };
+
+    let regenerated_title = summary::generate_summary_title(&summary_text, &session_id)
+        .await
+        .unwrap_or_else(|error| {
+            eprintln!(
+                "Summary title regeneration error for session {}: {}",
+                session_id, error
+            );
+            summary::derive_summary_title(&summary_text, &session_id)
+        });
+
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE summaries SET title = ?1 WHERE session_id = ?2",
+        [&regenerated_title, &session_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    conn.query_row(
+        "SELECT session_id, title, text, created_at FROM summaries WHERE session_id = ?1",
+        [&session_id],
+        |row| {
+            Ok(Summary {
+                session_id: row.get(0)?,
+                title: row.get(1)?,
+                text: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        },
+    )
+    .map_err(|e| e.to_string())
 }
