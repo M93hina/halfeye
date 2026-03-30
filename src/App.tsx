@@ -770,14 +770,6 @@ function SummariesTab() {
                   >
                     Reaction Log
                   </h3>
-                  <p
-                    className={cx(
-                      "mt-1 text-xs",
-                      isDark ? "text-slate-500" : "text-slate-500",
-                    )}
-                  >
-                    {isReactionLogOpen ? "クリックで収納" : "クリックで表示"}
-                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span

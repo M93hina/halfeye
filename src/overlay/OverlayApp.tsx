@@ -23,6 +23,7 @@ export default function OverlayApp() {
   const reactionTimerRef = useRef<number | null>(null);
   const statusRef = useRef<SessionStatus>("idle");
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const lastSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -30,13 +31,6 @@ export default function OverlayApp() {
     let unsubscribeReaction = () => {};
 
     const resetToWaiting = () => {
-      clearReactionTimer(reactionTimerRef);
-      if (mounted) {
-        setReaction(null);
-      }
-    };
-
-    const hideOverlayState = () => {
       clearReactionTimer(reactionTimerRef);
       if (mounted) {
         setReaction(null);
@@ -52,7 +46,7 @@ export default function OverlayApp() {
       setStatus(sessionState.status);
       statusRef.current = sessionState.status;
       if (sessionState.status !== "active") {
-        hideOverlayState();
+        resetToWaiting();
       }
 
       unsubscribeSession = await listen<SessionStateChangedEvent>(
@@ -66,7 +60,7 @@ export default function OverlayApp() {
             return;
           }
 
-          hideOverlayState();
+          resetToWaiting();
         },
       );
 
@@ -111,6 +105,12 @@ export default function OverlayApp() {
       const rect = content.getBoundingClientRect();
       const nextWidth = Math.ceil(rect.width);
       const nextHeight = Math.ceil(rect.height);
+
+      const last = lastSizeRef.current;
+      if (last && last.width === nextWidth && last.height === nextHeight) {
+        return;
+      }
+      lastSizeRef.current = { width: nextWidth, height: nextHeight };
 
       void invoke("resize_overlay", {
         width: nextWidth,

@@ -1,5 +1,6 @@
 use crate::summary;
 use crate::state::AppState;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
@@ -44,19 +45,7 @@ pub fn list_summaries(state: State<'_, Arc<AppState>>) -> Result<Vec<SummaryList
 #[tauri::command]
 pub fn get_summary(state: State<'_, Arc<AppState>>, session_id: String) -> Result<Summary, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
-    conn.query_row(
-        "SELECT session_id, title, text, created_at FROM summaries WHERE session_id = ?1",
-        [&session_id],
-        |row| {
-            Ok(Summary {
-                session_id: row.get(0)?,
-                title: row.get(1)?,
-                text: row.get(2)?,
-                created_at: row.get(3)?,
-            })
-        },
-    )
-    .map_err(|e| e.to_string())
+    query_summary(&conn, &session_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -74,9 +63,19 @@ pub fn update_summary_title(
     )
     .map_err(|e| e.to_string())?;
 
+    query_summary(&conn, &session_id).map_err(|e| e.to_string())
+}
+
+fn normalize_summary_title(title: &str, fallback: &str) -> String {
+    let trimmed = title.trim();
+    let normalized = if trimmed.is_empty() { fallback } else { trimmed };
+    normalized.chars().take(40).collect()
+}
+
+fn query_summary(conn: &Connection, session_id: &str) -> Result<Summary, rusqlite::Error> {
     conn.query_row(
         "SELECT session_id, title, text, created_at FROM summaries WHERE session_id = ?1",
-        [&session_id],
+        [session_id],
         |row| {
             Ok(Summary {
                 session_id: row.get(0)?,
@@ -86,13 +85,6 @@ pub fn update_summary_title(
             })
         },
     )
-    .map_err(|e| e.to_string())
-}
-
-fn normalize_summary_title(title: &str, fallback: &str) -> String {
-    let trimmed = title.trim();
-    let normalized = if trimmed.is_empty() { fallback } else { trimmed };
-    normalized.chars().take(40).collect()
 }
 
 #[tauri::command]
@@ -127,17 +119,5 @@ pub async fn regenerate_summary_title(
     )
     .map_err(|e| e.to_string())?;
 
-    conn.query_row(
-        "SELECT session_id, title, text, created_at FROM summaries WHERE session_id = ?1",
-        [&session_id],
-        |row| {
-            Ok(Summary {
-                session_id: row.get(0)?,
-                title: row.get(1)?,
-                text: row.get(2)?,
-                created_at: row.get(3)?,
-            })
-        },
-    )
-    .map_err(|e| e.to_string())
+    query_summary(&conn, &session_id).map_err(|e| e.to_string())
 }

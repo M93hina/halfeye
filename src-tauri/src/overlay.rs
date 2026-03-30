@@ -29,7 +29,6 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<()> {
             .build()?;
 
     window.set_ignore_cursor_events(true)?;
-    apply_overlay_size(&window, OVERLAY_WIDTH, OVERLAY_HEIGHT)?;
 
     Ok(())
 }
