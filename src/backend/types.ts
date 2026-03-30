@@ -24,6 +24,7 @@ export interface BackendAdapter {
   listSummaries(): Promise<SummaryListItem[]>;
   getSummary(sessionId: string): Promise<Summary>;
   updateSummaryTitle(sessionId: string, title: string): Promise<Summary>;
+  regenerateSummaryTitle(sessionId: string): Promise<Summary>;
   getSettings(): Promise<Settings>;
   updateSettings(patch: SettingsPatch): Promise<Settings>;
   subscribeSessionStateChanged(

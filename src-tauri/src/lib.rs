@@ -41,6 +41,7 @@ pub fn run() {
             commands::summary::list_summaries,
             commands::summary::get_summary,
             commands::summary::update_summary_title,
+            commands::summary::regenerate_summary_title,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
