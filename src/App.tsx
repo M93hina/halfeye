@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { backend, backendModeLabel } from "./backend";
 import type { NavigationTab } from "./store/navigationStore";
 import { useNavigationStore } from "./store/navigationStore";
@@ -101,6 +101,17 @@ function formatDisplayTime(value: string | null, mode: TimeDisplayMode) {
     : formatAbsoluteDateTime(value);
 }
 
+function createObjectUrlFromBase64(base64: string, mimeType: string) {
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+}
+
 function sortSummaries(
   summaries: SummaryListItem[],
   order: SummariesSortOrder,
@@ -142,6 +153,7 @@ function getStatusTone(
 }
 
 function SessionTab() {
+  const aiPreview = useSessionStore((state) => state.aiPreview);
   const settings = useSessionStore((state) => state.settings);
   const sessionState = useSessionStore((state) => state.sessionState);
   const isSessionActionPending = useSessionStore(
@@ -159,6 +171,24 @@ function SessionTab() {
   const emphasis = settings?.active_session_emphasis ?? "strong";
   const canStart = sessionState.status === "idle" && !isSessionActionPending;
   const canStop = sessionState.status === "active" && !isSessionActionPending;
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!aiPreview.image_base64 || !aiPreview.mime_type) {
+      setPreviewSrc(null);
+      return;
+    }
+
+    const objectUrl = createObjectUrlFromBase64(
+      aiPreview.image_base64,
+      aiPreview.mime_type,
+    );
+    setPreviewSrc(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [aiPreview.image_base64, aiPreview.mime_type]);
 
   async function handleStart() {
     setSessionActionPending(true);
@@ -261,6 +291,96 @@ function SessionTab() {
           }
           value={sessionState.session_id ?? "--"}
         />
+      </div>
+
+      <div
+        className={cx(
+          "mt-6 border-t pt-6",
+          isDark ? "border-slate-800" : "border-stone-200",
+        )}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div
+            className={cx(
+              "text-sm font-semibold uppercase tracking-[0.2em]",
+              isDark ? "text-slate-400" : "text-slate-500",
+            )}
+          >
+            AI view
+          </div>
+          <div
+            className={cx(
+              "rounded-full border px-2.5 py-1 text-[11px] font-medium",
+              sessionState.status === "active"
+                ? getStatusTone("active", emphasis, isDark)
+                : isDark
+                  ? "border-slate-700 bg-slate-800 text-slate-300"
+                  : "border-stone-200 bg-stone-100 text-slate-600",
+            )}
+          >
+            {previewSrc ? "LIVE" : "IDLE"}
+          </div>
+        </div>
+
+        <div
+          className={cx(
+            "mt-4 overflow-hidden rounded-[1.2rem] border",
+            isDark ? "border-slate-700 bg-slate-950" : "border-stone-200 bg-stone-100",
+          )}
+        >
+          <div className="aspect-video w-full">
+            {previewSrc ? (
+              <img
+                alt="AI preview"
+                className="h-full w-full object-cover"
+                src={previewSrc}
+              />
+            ) : (
+              <div
+                className={cx(
+                  "flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-sm",
+                  isDark ? "text-slate-500" : "text-slate-400",
+                )}
+              >
+                <div>
+                  {sessionState.status === "active"
+                    ? "プレビュー待機中"
+                    : "セッション開始後に表示"}
+                </div>
+                <div className="text-xs">
+                  {sessionState.status === "active"
+                    ? "最初のキャプチャが届くまで少し待ってください"
+                    : "開始すると AI が見ている画面がここに出ます"}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <MetricCard
+            label="更新"
+            tone={
+              isDark
+                ? "border-slate-700 bg-slate-800 text-slate-200"
+                : "border-stone-200 bg-stone-50 text-slate-700"
+            }
+            value={formatDisplayTime(aiPreview.updated_at, timeMode)}
+          />
+          <MetricCard
+            label="サイズ"
+            tone={
+              isDark
+                ? "border-slate-700 bg-slate-800 text-slate-200"
+                : "border-stone-200 bg-stone-50 text-slate-700"
+            }
+            value={
+              aiPreview.width && aiPreview.height
+                ? `${aiPreview.width} x ${aiPreview.height}`
+                : "--"
+            }
+          />
+        </div>
       </div>
     </Panel>
   );
@@ -523,6 +643,7 @@ export function App() {
   const bootstrapState = useSessionStore((state) => state.bootstrapState);
   const errorMessage = useSessionStore((state) => state.errorMessage);
   const settings = useSessionStore((state) => state.settings);
+  const setAiPreview = useSessionStore((state) => state.setAiPreview);
   const selectedSummaryId = useSessionStore((state) => state.selectedSummaryId);
   const sessionState = useSessionStore((state) => state.sessionState);
   const summaries = useSessionStore((state) => state.summaries);
@@ -589,13 +710,15 @@ export function App() {
     clearErrorMessage();
 
     try {
-      const [nextSessionState, nextSettings, list] = await Promise.all([
+      const [nextSessionState, nextAiPreview, nextSettings, list] = await Promise.all([
         backend.getSessionState(),
+        backend.getAiPreviewState(),
         backend.getSettings(),
         backend.listSummaries(),
       ]);
 
       setSessionState(nextSessionState);
+      setAiPreview(nextAiPreview);
       setSettings(nextSettings);
       setSummaries(list);
       setSelectedSummaryId(list[0]?.session_id ?? null);
@@ -610,6 +733,7 @@ export function App() {
     let isActive = true;
     let unsubscribeSession = () => {};
     let unsubscribeSummary = () => {};
+    let unsubscribePreview = () => {};
 
     void (async () => {
       await bootstrapApp();
@@ -631,6 +755,15 @@ export function App() {
         return;
       }
       unsubscribeSession = unsub1;
+
+      const unsubPreview = await backend.subscribeAiPreviewUpdated(async (event) => {
+        setAiPreview(event);
+      });
+      if (!isActive) {
+        unsubPreview();
+        return;
+      }
+      unsubscribePreview = unsubPreview;
 
       const unsub2 = await backend.subscribeSummaryReady(async (event) => {
         try {
@@ -654,6 +787,7 @@ export function App() {
     return () => {
       isActive = false;
       unsubscribeSession();
+      unsubscribePreview();
       unsubscribeSummary();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- useEffectEvent は安定参照であり依存配列不要

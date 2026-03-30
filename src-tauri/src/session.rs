@@ -1,12 +1,101 @@
 use crate::capture;
 use crate::overlay;
 use crate::reaction;
-use crate::state::{AppState, SessionState, SessionStatus};
+use crate::state::{AiPreviewState, AppState, SessionState, SessionStatus};
 use crate::summary;
 use chrono::Utc;
 use rusqlite::params;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
+
+const PREVIEW_INTERVAL_SECS: u64 = 2;
+const LLM_INTERVAL_SECS: u64 = 10;
+const PREVIEW_MAX_WIDTH: u32 = 480;
+
+fn emit_ai_preview(app: &AppHandle, preview: &AiPreviewState) -> Result<(), String> {
+    app.emit("ai_preview_updated", preview)
+        .map_err(|e| e.to_string())
+}
+
+fn set_ai_preview(state: &AppState, preview: AiPreviewState) -> Result<(), String> {
+    let mut guard = state.ai_preview.lock().map_err(|e| e.to_string())?;
+    *guard = preview;
+    Ok(())
+}
+
+fn clear_ai_preview(app: &AppHandle, state: &AppState) -> Result<(), String> {
+    let preview = AiPreviewState::default();
+    set_ai_preview(state, preview.clone())?;
+    emit_ai_preview(app, &preview)?;
+    Ok(())
+}
+
+fn update_ai_preview(app: &AppHandle, state: &AppState, image_base64: &str) -> Result<(), String> {
+    let preview = match capture::create_preview_frame(image_base64, PREVIEW_MAX_WIDTH) {
+        Ok(frame) => AiPreviewState {
+            image_base64: Some(frame.image_base64),
+            mime_type: Some(frame.mime_type),
+            updated_at: Some(Utc::now().to_rfc3339()),
+            width: Some(frame.width),
+            height: Some(frame.height),
+        },
+        Err(error) => {
+            eprintln!("AI preview resize error: {}", error);
+            AiPreviewState {
+                image_base64: Some(image_base64.to_string()),
+                mime_type: Some("image/jpeg".to_string()),
+                updated_at: Some(Utc::now().to_rfc3339()),
+                width: None,
+                height: None,
+            }
+        }
+    };
+
+    set_ai_preview(state, preview.clone())?;
+    emit_ai_preview(app, &preview)?;
+    Ok(())
+}
+
+fn should_run_llm(state: &AppState) -> Result<bool, String> {
+    let mut in_flight = state.llm_in_flight.lock().map_err(|e| e.to_string())?;
+    if *in_flight {
+        return Ok(false);
+    }
+
+    let mut last_started_at = state
+        .last_llm_started_at
+        .lock()
+        .map_err(|e| e.to_string())?;
+    let now = Instant::now();
+
+    if last_started_at
+        .as_ref()
+        .map(|last| now.duration_since(*last) < Duration::from_secs(LLM_INTERVAL_SECS))
+        .unwrap_or(false)
+    {
+        return Ok(false);
+    }
+
+    *last_started_at = Some(now);
+    *in_flight = true;
+    Ok(true)
+}
+
+fn finish_llm(state: &AppState) {
+    if let Ok(mut in_flight) = state.llm_in_flight.lock() {
+        *in_flight = false;
+    }
+}
+
+fn reset_llm_state(state: &AppState) {
+    if let Ok(mut last_started_at) = state.last_llm_started_at.lock() {
+        *last_started_at = None;
+    }
+    if let Ok(mut in_flight) = state.llm_in_flight.lock() {
+        *in_flight = false;
+    }
+}
 
 pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String> {
     let current = state.session_rx.borrow().clone();
@@ -26,17 +115,32 @@ pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String
         .map_err(|e| e.to_string())?;
     }
 
+    reset_llm_state(state);
+    clear_ai_preview(app, state)?;
+
     let state_arc = state.self_arc.upgrade().ok_or("AppState Arc not set")?;
     let app_handle = app.clone();
-    let handle = capture::start_capture_loop(10, move |image_data| {
+    let handle = capture::start_capture_loop(PREVIEW_INTERVAL_SECS, move |image_data| {
         let state_arc = state_arc.clone();
         let app_handle = app_handle.clone();
         tokio::spawn(async move {
-            match reaction::generate_and_save_reaction(&state_arc, &image_data).await {
-                Ok(text) => {
-                    let _ = app_handle.emit("overlay-reaction", serde_json::json!({ "text": text }));
+            if let Err(error) = update_ai_preview(&app_handle, &state_arc, &image_data) {
+                eprintln!("AI preview error: {}", error);
+            }
+
+            match should_run_llm(&state_arc) {
+                Ok(true) => {
+                    match reaction::generate_and_save_reaction(&state_arc, &image_data).await {
+                        Ok(text) => {
+                            let _ = app_handle
+                                .emit("overlay-reaction", serde_json::json!({ "text": text }));
+                        }
+                        Err(error) => eprintln!("Reaction error: {}", error),
+                    }
+                    finish_llm(&state_arc);
                 }
-                Err(e) => eprintln!("Reaction error: {}", e),
+                Ok(false) => {}
+                Err(error) => eprintln!("LLM cadence error: {}", error),
             }
         });
     });
@@ -44,6 +148,8 @@ pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String
         let mut capture_handle = state.capture_handle.lock().map_err(|e| e.to_string())?;
         *capture_handle = Some(handle);
     }
+
+    overlay::show_overlay(app).map_err(|e| e.to_string())?;
 
     let new_state = SessionState {
         status: SessionStatus::Active,
@@ -60,7 +166,6 @@ pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String
         serde_json::json!({ "status": "active" }),
     )
     .map_err(|e| e.to_string())?;
-    overlay::show_overlay(app).map_err(|e| e.to_string())?;
 
     Ok(session_id)
 }
@@ -116,18 +221,24 @@ pub fn stop_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
                             "SELECT text FROM summaries WHERE session_id = ?1 ORDER BY created_at DESC LIMIT 1",
                             params![sid],
                             |row| row.get::<_, String>(0),
-                        ).ok()
+                        )
+                        .ok()
                     })
                 };
                 if let Some(text) = text {
-                    let _ = app_clone.emit("summary_ready", serde_json::json!({ "session_id": sid, "text": text }));
+                    let _ = app_clone.emit(
+                        "summary_ready",
+                        serde_json::json!({ "session_id": sid, "text": text }),
+                    );
                 }
             }
-            Err(e) => eprintln!("Summary generation error: {}", e),
+            Err(error) => eprintln!("Summary generation error: {}", error),
         }
     });
 
     overlay::hide_overlay(app).map_err(|e| e.to_string())?;
+    reset_llm_state(state);
+    clear_ai_preview(app, state)?;
 
     let idle_state = SessionState::default();
     state
