@@ -29,6 +29,10 @@ export interface SessionStateChangedEvent {
   status: SessionStatus;
 }
 
+export interface OverlayReactionEvent {
+  text: string;
+}
+
 export interface SummaryReadyEvent {
   session_id: string;
   text: string;

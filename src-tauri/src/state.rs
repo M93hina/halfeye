@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::watch;
 
 use crate::capture::CaptureHandle;
@@ -35,7 +35,7 @@ pub struct AppState {
     pub session_tx: watch::Sender<SessionState>,
     pub session_rx: watch::Receiver<SessionState>,
     pub capture_handle: Mutex<Option<CaptureHandle>>,
-    pub self_arc: Option<Arc<AppState>>,
+    pub self_arc: Weak<AppState>,
 }
 
 impl AppState {
@@ -46,7 +46,7 @@ impl AppState {
             session_tx,
             session_rx,
             capture_handle: Mutex::new(None),
-            self_arc: weak.upgrade(),
+            self_arc: weak.clone(),
         })
     }
 }
