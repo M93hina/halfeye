@@ -48,6 +48,11 @@ function isDarkTheme(themeMode: string | undefined) {
   return themeMode === "dark";
 }
 
+function normalizeSummaryTitle(value: string | null | undefined, fallback: string) {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : fallback;
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
@@ -325,7 +330,9 @@ function SessionTab() {
         <div
           className={cx(
             "mt-4 overflow-hidden rounded-[1.2rem] border",
-            isDark ? "border-slate-700 bg-slate-950" : "border-stone-200 bg-stone-100",
+            isDark
+              ? "border-slate-700 bg-slate-950"
+              : "border-stone-200 bg-stone-100",
           )}
         >
           <div className="aspect-video w-full">
@@ -398,6 +405,10 @@ function SummariesTab() {
   const setSelectedSummaryId = useSessionStore(
     (state) => state.setSelectedSummaryId,
   );
+  const setSummaries = useSessionStore((state) => state.setSummaries);
+  const setSelectedSummary = useSessionStore((state) => state.setSelectedSummary);
+  const setErrorMessage = useSessionStore((state) => state.setErrorMessage);
+  const clearErrorMessage = useSessionStore((state) => state.clearErrorMessage);
 
   const isDark = isDarkTheme(settings?.theme_mode);
   const timeMode = settings?.time_display_mode ?? "absolute";
@@ -406,6 +417,54 @@ function SummariesTab() {
     summaries,
     settings?.summaries_sort_order ?? "newest",
   );
+  const [titleDraft, setTitleDraft] = useState("");
+  const [isRenamePending, setRenamePending] = useState(false);
+
+  useEffect(() => {
+    setTitleDraft(selectedSummary?.title ?? "");
+  }, [selectedSummary?.session_id, selectedSummary?.title]);
+
+  const currentSummaryTitle = selectedSummary
+    ? normalizeSummaryTitle(selectedSummary.title, selectedSummary.session_id)
+    : "";
+  const normalizedTitleDraft = selectedSummary
+    ? normalizeSummaryTitle(titleDraft, selectedSummary.session_id)
+    : "";
+  const canSaveTitle =
+    !!selectedSummary &&
+    !isRenamePending &&
+    normalizedTitleDraft !== currentSummaryTitle;
+
+  async function handleSaveTitle() {
+    if (!selectedSummary || !canSaveTitle) {
+      return;
+    }
+
+    setRenamePending(true);
+    clearErrorMessage();
+
+    try {
+      const updatedSummary = await backend.updateSummaryTitle(
+        selectedSummary.session_id,
+        normalizedTitleDraft,
+      );
+      setSelectedSummary(updatedSummary);
+      setSummaries(
+        summaries.map((summary) =>
+          summary.session_id === updatedSummary.session_id
+            ? { ...summary, title: updatedSummary.title }
+            : summary,
+        ),
+      );
+    } catch (error) {
+      setTitleDraft(currentSummaryTitle);
+      setErrorMessage(
+        getErrorMessage(error, "まとめの名前を更新できませんでした。"),
+      );
+    } finally {
+      setRenamePending(false);
+    }
+  }
 
   return (
     <section className="grid gap-4 xl:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)]">
@@ -463,14 +522,52 @@ function SummariesTab() {
         ) : selectedSummary ? (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2
-                className={cx(
-                  "break-all text-lg font-semibold tracking-tight",
-                  isDark ? "text-slate-100" : "text-slate-900",
-                )}
-              >
-                {selectedSummary.session_id}
-              </h2>
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cx(
+                    "text-xs font-semibold uppercase tracking-[0.2em]",
+                    isDark ? "text-slate-400" : "text-slate-500",
+                  )}
+                >
+                  名前
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <input
+                    className={cx(
+                      "min-w-[16rem] flex-1 rounded-xl border px-3 py-2 text-sm outline-none transition",
+                      isDark
+                        ? "border-slate-700 bg-slate-950 text-slate-100 placeholder:text-slate-500"
+                        : "border-stone-200 bg-white text-slate-700 placeholder:text-slate-400",
+                    )}
+                    disabled={isRenamePending}
+                    maxLength={40}
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        setTitleDraft(currentSummaryTitle);
+                        return;
+                      }
+
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void handleSaveTitle();
+                      }
+                    }}
+                    placeholder={selectedSummary.session_id}
+                    type="text"
+                    value={titleDraft}
+                  />
+                  <ActionButton
+                    disabled={!canSaveTitle}
+                    intent="primary"
+                    onClick={() => {
+                      void handleSaveTitle();
+                    }}
+                  >
+                    {isRenamePending ? "保存中" : "保存"}
+                  </ActionButton>
+                </div>
+              </div>
               <div
                 className={cx(
                   "rounded-full border px-3 py-1 text-xs font-medium",
@@ -482,6 +579,14 @@ function SummariesTab() {
                 {formatDisplayTime(selectedSummary.created_at, timeMode)}
               </div>
             </div>
+            <p
+              className={cx(
+                "break-all text-sm",
+                isDark ? "text-slate-400" : "text-slate-500",
+              )}
+            >
+              {selectedSummary.session_id}
+            </p>
 
             <article
               className={cx(
@@ -643,7 +748,6 @@ export function App() {
   const bootstrapState = useSessionStore((state) => state.bootstrapState);
   const errorMessage = useSessionStore((state) => state.errorMessage);
   const settings = useSessionStore((state) => state.settings);
-  const setAiPreview = useSessionStore((state) => state.setAiPreview);
   const selectedSummaryId = useSessionStore((state) => state.selectedSummaryId);
   const sessionState = useSessionStore((state) => state.sessionState);
   const summaries = useSessionStore((state) => state.summaries);
@@ -652,6 +756,7 @@ export function App() {
   const setErrorMessage = useSessionStore((state) => state.setErrorMessage);
   const clearErrorMessage = useSessionStore((state) => state.clearErrorMessage);
   const setSessionState = useSessionStore((state) => state.setSessionState);
+  const setAiPreview = useSessionStore((state) => state.setAiPreview);
   const setSettings = useSessionStore((state) => state.setSettings);
   const setSummaries = useSessionStore((state) => state.setSummaries);
   const setSelectedSummaryId = useSessionStore(
@@ -1180,6 +1285,14 @@ function SummaryListButton({
       <div
         className="break-all font-medium"
         style={summaryFontStyles[fontSize]}
+      >
+        {normalizeSummaryTitle(item.title, item.session_id)}
+      </div>
+      <div
+        className={cx(
+          "mt-1 break-all text-xs",
+          isDark ? "text-slate-400" : "text-slate-500",
+        )}
       >
         {item.session_id}
       </div>

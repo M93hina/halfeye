@@ -21,6 +21,7 @@ export interface BackendAdapter {
   getAiPreviewState(): Promise<AiPreviewState>;
   listSummaries(): Promise<SummaryListItem[]>;
   getSummary(sessionId: string): Promise<Summary>;
+  updateSummaryTitle(sessionId: string, title: string): Promise<Summary>;
   getSettings(): Promise<Settings>;
   updateSettings(patch: SettingsPatch): Promise<Settings>;
   subscribeSessionStateChanged(

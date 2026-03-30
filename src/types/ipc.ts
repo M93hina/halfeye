@@ -8,11 +8,13 @@ export interface SessionState {
 
 export interface SummaryListItem {
   session_id: string;
+  title: string;
   created_at: string;
 }
 
 export interface Summary {
   session_id: string;
+  title: string;
   text: string;
   created_at: string;
 }

@@ -32,6 +32,7 @@ function createSeededSummaries(): Summary[] {
   return [
     {
       session_id: "session-demo-design-review",
+      title: "overlay の余白設計レビュー",
       created_at: "2026-03-29T12:30:00.000Z",
       text: [
         "デザインレビューで overlay の余白設計を確認。",
@@ -41,6 +42,7 @@ function createSeededSummaries(): Summary[] {
     },
     {
       session_id: "session-demo-pairing",
+      title: "companion AI 体験の検証",
       created_at: "2026-03-28T04:10:00.000Z",
       text: [
         "コーディング作業中の companion AI 体験を検証。",
@@ -122,6 +124,15 @@ export class MockBackend implements BackendAdapter {
         : "不明";
       const summary: Summary = {
         session_id: finishingSession.session_id ?? `session-${createdAt}`,
+        title: deriveSummaryTitle(
+          [
+            `セッション ${finishingSession.session_id ?? "unknown"} を終了しました。`,
+            `開始時刻: ${startedAt}`,
+            "モック連携が summary_ready イベントを発火し、一覧と詳細を再取得します。",
+            "ここを Rust 実装に差し替えても、UI 側は adapter 越しのまま利用できます。",
+          ].join("\n"),
+          finishingSession.session_id ?? `session-${createdAt}`,
+        ),
         created_at: createdAt,
         text: [
           `セッション ${finishingSession.session_id ?? "unknown"} を終了しました。`,
@@ -151,6 +162,7 @@ export class MockBackend implements BackendAdapter {
   async listSummaries() {
     return this.summaries.map((summary) => ({
       session_id: summary.session_id,
+      title: summary.title,
       created_at: summary.created_at,
     }));
   }
@@ -162,6 +174,17 @@ export class MockBackend implements BackendAdapter {
       throw new Error(`セッション ${sessionId} のまとめが見つかりません。`);
     }
 
+    return { ...summary };
+  }
+
+  async updateSummaryTitle(sessionId: string, title: string) {
+    const summary = this.summaries.find((item) => item.session_id === sessionId);
+
+    if (!summary) {
+      throw new Error(`セッション ${sessionId} のまとめが見つかりません。`);
+    }
+
+    summary.title = normalizeSummaryTitle(title, sessionId);
     return { ...summary };
   }
 
@@ -256,6 +279,21 @@ export class MockBackend implements BackendAdapter {
       this.previewTimer = null;
     }
   }
+}
+
+function deriveSummaryTitle(text: string, sessionId: string) {
+  const firstMeaningfulLine = text
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  return normalizeSummaryTitle(firstMeaningfulLine ?? sessionId, sessionId);
+}
+
+function normalizeSummaryTitle(title: string, fallback: string) {
+  const trimmed = title.trim();
+  const normalized = trimmed.length > 0 ? trimmed : fallback;
+  return normalized.slice(0, 40);
 }
 
 function createMockPreview(sessionId: string, tick: number): AiPreviewState {
