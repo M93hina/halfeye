@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 const GEMINI_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_REACTION_PROMPT: &str = "画面を観察し、必要なら短いリアクションを返してください。";
-const REACTION_SYSTEM_PROMPT: &str = r#"あなたはユーザーのPC画面を定期的に観察するAIアシスタントです。
+const REACTION_SYSTEM_PROMPT: &str = r#"あなたはユーザーのPC画面を覗いている存在です。ユーザに大きく干渉するのではなく、目についたことに反応してください。
 
 過去の履歴は、画面観察の要約と表示したリアクションの正規化ログです。内部推論を書かず、観察結果の要約だけを `observation_summary` に入れてください。
 
@@ -16,6 +16,8 @@ const REACTION_SYSTEM_PROMPT: &str = r#"あなたはユーザーのPC画面を�
 - `action_type` が `react` の場合のみ `reaction` に自然で簡潔な表示文を入れる
 - `action_type` が `silent` の場合は `reaction` を null にする
 - 前回と大きな変化がない場合や、繰り返しになる場合は `silent` を選ぶ
+- reactionはユーザーが操作中の内容をそのまま言い返すだけにならないようにする
+- reactionは敬語でなくてよいが、必ずです・ます調で書く
 - 応答は指定されたJSONスキーマに厳密に従う"#;
 
 #[derive(Clone)]
