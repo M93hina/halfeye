@@ -17,6 +17,14 @@ export interface Summary {
   created_at: string;
 }
 
+export interface AiPreviewState {
+  image_base64: string | null;
+  mime_type: string | null;
+  updated_at: string | null;
+  width: number | null;
+  height: number | null;
+}
+
 export type TimeDisplayMode = "absolute" | "relative";
 export type SummariesSortOrder = "newest" | "oldest";
 export type SummaryFontSize = "small" | "medium" | "large";
@@ -50,6 +58,8 @@ export interface SessionStateChangedEvent {
 export interface OverlayReactionEvent {
   text: string;
 }
+
+export interface AiPreviewUpdatedEvent extends AiPreviewState {}
 
 export interface SummaryReadyEvent {
   session_id: string;

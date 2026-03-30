@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type {
+  AiPreviewState,
   SessionState,
   Settings,
   Summary,
@@ -16,10 +17,21 @@ function createInitialSessionState(): SessionState {
   };
 }
 
+function createInitialAiPreviewState(): AiPreviewState {
+  return {
+    image_base64: null,
+    mime_type: null,
+    updated_at: null,
+    width: null,
+    height: null,
+  };
+}
+
 interface SessionStore {
   bootstrapState: BootstrapState;
   errorMessage: string | null;
   sessionState: SessionState;
+  aiPreview: AiPreviewState;
   settings: Settings | null;
   summaries: SummaryListItem[];
   selectedSummaryId: string | null;
@@ -32,6 +44,7 @@ interface SessionStore {
   setErrorMessage: (message: string) => void;
   clearErrorMessage: () => void;
   setSessionState: (state: SessionState) => void;
+  setAiPreview: (state: AiPreviewState) => void;
   setSettings: (settings: Settings) => void;
   setSummaries: (summaries: SummaryListItem[]) => void;
   setSelectedSummaryId: (sessionId: string | null) => void;
@@ -46,6 +59,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   bootstrapState: "idle",
   errorMessage: null,
   sessionState: createInitialSessionState(),
+  aiPreview: createInitialAiPreviewState(),
   settings: null,
   summaries: [],
   selectedSummaryId: null,
@@ -58,6 +72,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   setErrorMessage: (errorMessage) => set({ errorMessage }),
   clearErrorMessage: () => set({ errorMessage: null }),
   setSessionState: (sessionState) => set({ sessionState }),
+  setAiPreview: (aiPreview) => set({ aiPreview }),
   setSettings: (settings) => set({ settings }),
   setSummaries: (summaries) => set({ summaries }),
   setSelectedSummaryId: (selectedSummaryId) =>

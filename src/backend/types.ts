@@ -1,4 +1,6 @@
 import type {
+  AiPreviewState,
+  AiPreviewUpdatedEvent,
   SessionState,
   SessionStateChangedEvent,
   Settings,
@@ -16,6 +18,7 @@ export interface BackendAdapter {
   startSession(): Promise<string>;
   stopSession(): Promise<void>;
   getSessionState(): Promise<SessionState>;
+  getAiPreviewState(): Promise<AiPreviewState>;
   listSummaries(): Promise<SummaryListItem[]>;
   getSummary(sessionId: string): Promise<Summary>;
   getSettings(): Promise<Settings>;
@@ -25,5 +28,8 @@ export interface BackendAdapter {
   ): Promise<Unsubscribe>;
   subscribeSummaryReady(
     handler: (event: SummaryReadyEvent) => void | Promise<void>,
+  ): Promise<Unsubscribe>;
+  subscribeAiPreviewUpdated(
+    handler: (event: AiPreviewUpdatedEvent) => void | Promise<void>,
   ): Promise<Unsubscribe>;
 }
