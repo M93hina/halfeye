@@ -1,5 +1,6 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 use tokio::sync::watch;
@@ -60,6 +61,7 @@ pub struct AppState {
     pub capture_handle: Mutex<Option<CaptureHandle>>,
     pub last_llm_started_at: Mutex<Option<Instant>>,
     pub llm_in_flight: Mutex<bool>,
+    pub reaction_in_flight: AtomicBool,
     pub self_arc: Weak<AppState>,
 }
 
@@ -74,6 +76,7 @@ impl AppState {
             capture_handle: Mutex::new(None),
             last_llm_started_at: Mutex::new(None),
             llm_in_flight: Mutex::new(false),
+            reaction_in_flight: AtomicBool::new(false),
             self_arc: weak.clone(),
         })
     }

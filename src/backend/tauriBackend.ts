@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AiPreviewState,
   AiPreviewUpdatedEvent,
+  ReactionLog,
   SessionState,
   SessionStateChangedEvent,
   Settings,
@@ -30,6 +31,10 @@ export class TauriBackend implements BackendAdapter {
 
   getAiPreviewState() {
     return invoke<AiPreviewState>("get_ai_preview_state");
+  }
+
+  listReactions(sessionId: string) {
+    return invoke<ReactionLog[]>("list_reactions", { sessionId });
   }
 
   listSummaries() {

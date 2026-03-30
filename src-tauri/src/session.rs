@@ -5,6 +5,7 @@ use crate::state::{AiPreviewState, AppState, SessionState, SessionStatus};
 use crate::summary;
 use chrono::Utc;
 use rusqlite::params;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
@@ -130,13 +131,16 @@ pub fn start_session(app: &AppHandle, state: &AppState) -> Result<String, String
 
             match should_run_llm(&state_arc) {
                 Ok(true) => {
+                    state_arc.reaction_in_flight.store(true, Ordering::Release);
                     match reaction::generate_and_save_reaction(&state_arc, &image_data).await {
-                        Ok(text) => {
+                        Ok(Some(text)) => {
                             let _ = app_handle
                                 .emit("overlay-reaction", serde_json::json!({ "text": text }));
                         }
+                        Ok(None) => {}
                         Err(error) => eprintln!("Reaction error: {}", error),
                     }
+                    state_arc.reaction_in_flight.store(false, Ordering::Release);
                     finish_llm(&state_arc);
                 }
                 Ok(false) => {}
@@ -212,6 +216,10 @@ pub fn stop_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
     let app_clone = app.clone();
     let sid = session_id.clone();
     tokio::spawn(async move {
+        while state_arc.reaction_in_flight.load(Ordering::Acquire) {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
         match summary::generate_summary(&state_arc, &sid).await {
             Ok(()) => {
                 let text = {

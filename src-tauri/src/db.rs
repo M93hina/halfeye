@@ -52,6 +52,33 @@ fn migrate(conn: &Connection) -> Result<()> {
         ",
     )?;
     ensure_summary_title_column(conn)?;
+
+    if !column_exists(conn, "reactions", "observation_summary")? {
+        conn.execute(
+            "ALTER TABLE reactions ADD COLUMN observation_summary TEXT",
+            [],
+        )?;
+    }
+
+    if !column_exists(conn, "reactions", "action_type")? {
+        conn.execute(
+            "ALTER TABLE reactions ADD COLUMN action_type TEXT NOT NULL DEFAULT 'react'",
+            [],
+        )?;
+    }
+
+    conn.execute(
+        "UPDATE reactions
+         SET observation_summary = COALESCE(NULLIF(observation_summary, ''), text)",
+        [],
+    )?;
+    conn.execute(
+        "UPDATE reactions
+         SET action_type = 'react'
+         WHERE action_type IS NULL OR action_type = ''",
+        [],
+    )?;
+
     Ok(())
 }
 
@@ -77,4 +104,19 @@ fn ensure_summary_title_column(conn: &Connection) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let pragma = format!("PRAGMA table_info({})", table);
+    let mut stmt = conn.prepare(&pragma)?;
+    let mut rows = stmt.query([])?;
+
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }

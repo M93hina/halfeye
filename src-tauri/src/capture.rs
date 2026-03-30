@@ -108,7 +108,10 @@ mod tests {
             .write_to(&mut buf, ImageFormat::Jpeg)
             .expect("RGBA image converted to RGB should encode as JPEG");
 
-        assert!(!buf.into_inner().is_empty(), "JPEG buffer should not be empty");
+        assert!(
+            !buf.into_inner().is_empty(),
+            "JPEG buffer should not be empty"
+        );
     }
 }
 

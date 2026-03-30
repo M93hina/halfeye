@@ -1,6 +1,7 @@
 import type {
   AiPreviewState,
   AiPreviewUpdatedEvent,
+  ReactionLog,
   SessionState,
   SessionStateChangedEvent,
   Settings,
@@ -19,6 +20,7 @@ export interface BackendAdapter {
   stopSession(): Promise<void>;
   getSessionState(): Promise<SessionState>;
   getAiPreviewState(): Promise<AiPreviewState>;
+  listReactions(sessionId: string): Promise<ReactionLog[]>;
   listSummaries(): Promise<SummaryListItem[]>;
   getSummary(sessionId: string): Promise<Summary>;
   updateSummaryTitle(sessionId: string, title: string): Promise<Summary>;

@@ -5,6 +5,7 @@ import { useNavigationStore } from "./store/navigationStore";
 import { useSessionStore } from "./store/sessionStore";
 import type {
   ActiveSessionEmphasis,
+  ReactionLog,
   SessionStatus,
   SettingsPatch,
   SummaryFontSize,
@@ -115,6 +116,10 @@ function createObjectUrlFromBase64(base64: string, mimeType: string) {
   }
 
   return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+}
+
+function formatActionLabel(actionType: ReactionLog["action_type"]) {
+  return actionType === "react" ? "react" : "silent";
 }
 
 function sortSummaries(
@@ -398,10 +403,12 @@ function SummariesTab() {
   const summaries = useSessionStore((state) => state.summaries);
   const selectedSummaryId = useSessionStore((state) => state.selectedSummaryId);
   const selectedSummary = useSessionStore((state) => state.selectedSummary);
+  const reactions = useSessionStore((state) => state.reactions);
   const isSummariesLoading = useSessionStore((state) => state.isSummariesLoading);
   const isSummaryDetailLoading = useSessionStore(
     (state) => state.isSummaryDetailLoading,
   );
+  const isReactionsLoading = useSessionStore((state) => state.isReactionsLoading);
   const setSelectedSummaryId = useSessionStore(
     (state) => state.setSelectedSummaryId,
   );
@@ -606,6 +613,96 @@ function SummariesTab() {
                 {selectedSummary.text}
               </pre>
             </article>
+
+            <section className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3
+                  className={cx(
+                    "text-sm font-semibold uppercase tracking-[0.2em]",
+                    isDark ? "text-slate-400" : "text-slate-500",
+                  )}
+                >
+                  Reaction Log
+                </h3>
+                <span
+                  className={cx(
+                    "rounded-full border px-2.5 py-1 text-xs font-medium",
+                    isDark
+                      ? "border-slate-700 bg-slate-800 text-slate-300"
+                      : "border-stone-200 bg-stone-100 text-slate-600",
+                  )}
+                >
+                  {reactions.length}
+                </span>
+              </div>
+
+              {isReactionsLoading && reactions.length === 0 ? (
+                <EmptyState title="ログ読み込み中" />
+              ) : reactions.length === 0 ? (
+                <EmptyState title="ログなし" />
+              ) : (
+                <div className="space-y-3">
+                  {reactions.map((reaction) => (
+                    <article
+                      key={reaction.id}
+                      className={cx(
+                        "rounded-[1.1rem] border p-4",
+                        isDark
+                          ? "border-slate-800 bg-slate-950/50"
+                          : "border-stone-200 bg-white/70",
+                      )}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span
+                          className={cx(
+                            "rounded-full border px-2.5 py-1 text-xs font-medium uppercase tracking-[0.16em]",
+                            reaction.action_type === "react"
+                              ? isDark
+                                ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-100"
+                                : "border-sky-200 bg-sky-50 text-sky-700"
+                              : isDark
+                                ? "border-slate-700 bg-slate-800 text-slate-300"
+                                : "border-stone-200 bg-stone-100 text-slate-600",
+                          )}
+                        >
+                          {formatActionLabel(reaction.action_type)}
+                        </span>
+                        <span
+                          className={cx(
+                            "text-xs",
+                            isDark ? "text-slate-400" : "text-slate-500",
+                          )}
+                        >
+                          {formatDisplayTime(reaction.timestamp, timeMode)}
+                        </span>
+                      </div>
+
+                      <p
+                        className={cx(
+                          "mt-3 text-sm leading-7",
+                          isDark ? "text-slate-200" : "text-slate-700",
+                        )}
+                      >
+                        {reaction.observation_summary}
+                      </p>
+
+                      <div
+                        className={cx(
+                          "mt-3 rounded-xl border px-3 py-2 text-sm",
+                          isDark
+                            ? "border-slate-800 bg-slate-900 text-slate-300"
+                            : "border-stone-200 bg-stone-50 text-slate-600",
+                        )}
+                      >
+                        {reaction.action_type === "react" && reaction.text.trim().length > 0
+                          ? reaction.text
+                          : "silent"}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         ) : (
           <EmptyState title="取得できません" />
@@ -763,12 +860,14 @@ export function App() {
     (state) => state.setSelectedSummaryId,
   );
   const setSelectedSummary = useSessionStore((state) => state.setSelectedSummary);
+  const setReactions = useSessionStore((state) => state.setReactions);
   const setSummariesLoading = useSessionStore(
     (state) => state.setSummariesLoading,
   );
   const setSummaryDetailLoading = useSessionStore(
     (state) => state.setSummaryDetailLoading,
   );
+  const setReactionsLoading = useSessionStore((state) => state.setReactionsLoading);
 
   const isDark = isDarkTheme(settings?.theme_mode);
 
@@ -903,22 +1002,28 @@ export function App() {
 
     if (!selectedSummaryId) {
       setSelectedSummary(null);
+      setReactions([]);
       setSummaryDetailLoading(false);
+      setReactionsLoading(false);
       return () => {
         isActive = false;
       };
     }
 
     setSummaryDetailLoading(true);
+    setReactionsLoading(true);
 
-    void backend
-      .getSummary(selectedSummaryId)
-      .then((summary) => {
+    void Promise.all([
+      backend.getSummary(selectedSummaryId),
+      backend.listReactions(selectedSummaryId),
+    ])
+      .then(([summary, reactions]) => {
         if (!isActive) {
           return;
         }
 
         setSelectedSummary(summary);
+        setReactions(reactions);
       })
       .catch((error) => {
         if (!isActive) {
@@ -926,6 +1031,7 @@ export function App() {
         }
 
         setSelectedSummary(null);
+        setReactions([]);
         setErrorMessage(getErrorMessage(error, "まとめ詳細の取得に失敗しました。"));
       })
       .finally(() => {
@@ -934,6 +1040,7 @@ export function App() {
         }
 
         setSummaryDetailLoading(false);
+        setReactionsLoading(false);
       });
 
     return () => {
@@ -942,6 +1049,8 @@ export function App() {
   }, [
     selectedSummaryId,
     setErrorMessage,
+    setReactions,
+    setReactionsLoading,
     setSelectedSummary,
     setSummaryDetailLoading,
   ]);

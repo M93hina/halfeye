@@ -12,16 +12,16 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<()> {
 
     let window =
         WebviewWindowBuilder::new(app, OVERLAY_LABEL, WebviewUrl::App("overlay.html".into()))
-        .title("halfeye-overlay")
-        .inner_size(OVERLAY_WIDTH as f64, OVERLAY_HEIGHT as f64)
-        .visible(false)
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .resizable(false)
-        .focusable(false)
-        .build()?;
+            .title("halfeye-overlay")
+            .inner_size(OVERLAY_WIDTH as f64, OVERLAY_HEIGHT as f64)
+            .visible(false)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .focusable(false)
+            .build()?;
 
     window.set_ignore_cursor_events(true)?;
 
