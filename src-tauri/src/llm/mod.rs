@@ -71,7 +71,7 @@ pub struct ReactionContext {
 pub trait LlmClient: Send + Sync {
     async fn generate_reaction(
         &self,
-        image_base64: &str,
+        images: &[String],
         transcript_chunks: &[TranscriptChunk],
         context: &[ReactionContext],
     ) -> Result<ReactionOutput, String>;

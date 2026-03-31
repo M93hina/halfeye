@@ -1,5 +1,5 @@
-use crate::summary;
 use crate::state::AppState;
+use crate::summary;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -68,7 +68,11 @@ pub fn update_summary_title(
 
 fn normalize_summary_title(title: &str, fallback: &str) -> String {
     let trimmed = title.trim();
-    let normalized = if trimmed.is_empty() { fallback } else { trimmed };
+    let normalized = if trimmed.is_empty() {
+        fallback
+    } else {
+        trimmed
+    };
     normalized.chars().take(40).collect()
 }
 

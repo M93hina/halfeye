@@ -46,11 +46,25 @@ pub fn capture_screenshot() -> Result<String, String> {
     Ok(base64_str)
 }
 
-pub fn create_preview_frame(image_base64: &str, max_width: u32) -> Result<PreviewFrame, String> {
+fn decode_base64_image(image_base64: &str) -> Result<DynamicImage, String> {
     let image_bytes = base64::engine::general_purpose::STANDARD
         .decode(image_base64)
         .map_err(|e| e.to_string())?;
-    let image = image::load_from_memory(&image_bytes).map_err(|e| e.to_string())?;
+    image::load_from_memory(&image_bytes).map_err(|e| e.to_string())
+}
+
+fn encode_jpeg_base64(image: &DynamicImage, quality: u8) -> Result<String, String> {
+    let mut buffer = Vec::new();
+    {
+        let mut encoder = JpegEncoder::new_with_quality(&mut buffer, quality);
+        encoder.encode_image(image).map_err(|e| e.to_string())?;
+    }
+
+    Ok(base64::engine::general_purpose::STANDARD.encode(buffer))
+}
+
+pub fn create_preview_frame(image_base64: &str, max_width: u32) -> Result<PreviewFrame, String> {
+    let image = decode_base64_image(image_base64)?;
     let resized = if image.width() > max_width {
         image.resize(max_width, max_width, FilterType::Triangle)
     } else {
@@ -58,14 +72,25 @@ pub fn create_preview_frame(image_base64: &str, max_width: u32) -> Result<Previe
     };
 
     let (width, height) = resized.dimensions();
-    let mut buffer = Vec::new();
-    {
-        let mut encoder = JpegEncoder::new_with_quality(&mut buffer, 60);
-        encoder.encode_image(&resized).map_err(|e| e.to_string())?;
-    }
-
     Ok(PreviewFrame {
-        image_base64: base64::engine::general_purpose::STANDARD.encode(buffer),
+        image_base64: encode_jpeg_base64(&resized, 60)?,
+        mime_type: "image/jpeg".to_string(),
+        width,
+        height,
+    })
+}
+
+pub fn create_llm_frame(image_base64: &str, max_long_edge: u32) -> Result<PreviewFrame, String> {
+    let image = decode_base64_image(image_base64)?;
+    let resized = if image.width().max(image.height()) > max_long_edge {
+        image.resize(max_long_edge, max_long_edge, FilterType::Triangle)
+    } else {
+        image
+    };
+
+    let (width, height) = resized.dimensions();
+    Ok(PreviewFrame {
+        image_base64: encode_jpeg_base64(&resized, 60)?,
         mime_type: "image/jpeg".to_string(),
         width,
         height,
@@ -73,10 +98,7 @@ pub fn create_preview_frame(image_base64: &str, max_width: u32) -> Result<Previe
 }
 
 pub fn make_thumbnail(image_base64: &str) -> Result<CaptureThumb, String> {
-    let image_bytes = base64::engine::general_purpose::STANDARD
-        .decode(image_base64)
-        .map_err(|e| e.to_string())?;
-    let image = image::load_from_memory(&image_bytes).map_err(|e| e.to_string())?;
+    let image = decode_base64_image(image_base64)?;
 
     Ok(image
         .resize_exact(THUMB_WIDTH, THUMB_HEIGHT, FilterType::Triangle)
@@ -142,14 +164,21 @@ mod tests {
         base64::engine::general_purpose::STANDARD.encode(buf.into_inner())
     }
 
+    fn decode_dimensions(image_base64: &str) -> (u32, u32) {
+        let image_bytes = base64::engine::general_purpose::STANDARD
+            .decode(image_base64)
+            .expect("image should decode");
+        let image = image::load_from_memory(&image_bytes).expect("image should load");
+        image.dimensions()
+    }
+
     fn blank_thumb() -> GrayImage {
         GrayImage::from_pixel(THUMB_WIDTH, THUMB_HEIGHT, Luma([0]))
     }
 
     #[test]
     fn converts_rgba_image_to_jpeg_after_dropping_alpha() {
-        let rgba_image =
-            image::RgbaImage::from_fn(2, 2, |_x, _y| image::Rgba([10, 20, 30, 128]));
+        let rgba_image = image::RgbaImage::from_fn(2, 2, |_x, _y| image::Rgba([10, 20, 30, 128]));
         let rgb_image = DynamicImage::ImageRgba8(rgba_image).to_rgb8();
 
         let mut buf = Cursor::new(Vec::new());
@@ -171,6 +200,39 @@ mod tests {
         let thumb = make_thumbnail(&encoded).expect("thumbnail should be created");
 
         assert_eq!(thumb.dimensions(), (THUMB_WIDTH, THUMB_HEIGHT));
+    }
+
+    #[test]
+    fn create_llm_frame_shrinks_landscape_image_to_max_long_edge() {
+        let image = RgbImage::from_pixel(1920, 1080, Rgb([20, 30, 40]));
+        let encoded = encode_jpeg_base64(&DynamicImage::ImageRgb8(image));
+
+        let frame = create_llm_frame(&encoded, 1280).expect("llm frame should be created");
+
+        assert_eq!((frame.width, frame.height), (1280, 720));
+        assert_eq!(decode_dimensions(&frame.image_base64), (1280, 720));
+    }
+
+    #[test]
+    fn create_llm_frame_does_not_upscale_smaller_image() {
+        let image = RgbImage::from_pixel(1000, 600, Rgb([20, 30, 40]));
+        let encoded = encode_jpeg_base64(&DynamicImage::ImageRgb8(image));
+
+        let frame = create_llm_frame(&encoded, 1280).expect("llm frame should be created");
+
+        assert_eq!((frame.width, frame.height), (1000, 600));
+        assert_eq!(decode_dimensions(&frame.image_base64), (1000, 600));
+    }
+
+    #[test]
+    fn create_llm_frame_preserves_portrait_aspect_ratio() {
+        let image = RgbImage::from_pixel(1080, 1920, Rgb([20, 30, 40]));
+        let encoded = encode_jpeg_base64(&DynamicImage::ImageRgb8(image));
+
+        let frame = create_llm_frame(&encoded, 1280).expect("llm frame should be created");
+
+        assert_eq!((frame.width, frame.height), (720, 1280));
+        assert_eq!(decode_dimensions(&frame.image_base64), (720, 1280));
     }
 
     #[test]
@@ -217,4 +279,3 @@ mod tests {
         assert!(has_significant_change(&prev, &curr));
     }
 }
-
