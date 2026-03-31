@@ -1,5 +1,6 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, Weak};
@@ -71,6 +72,7 @@ pub struct AppState {
     pub audio_handle: Mutex<Option<TranscriptionWorkerHandle>>,
     pub transcript_chunks: Mutex<Vec<TranscriptChunk>>,
     pub audio_runtime: Mutex<AudioRuntimeState>,
+    pub capture_image_buffer: Mutex<VecDeque<String>>,
     pub last_capture_thumbnail: Mutex<Option<CaptureThumb>>,
     pub capture_generation: AtomicU64,
     pub last_llm_started_at: Mutex<Option<Instant>>,
@@ -92,6 +94,7 @@ impl AppState {
             audio_handle: Mutex::new(None),
             transcript_chunks: Mutex::new(Vec::new()),
             audio_runtime: Mutex::new(audio_runtime),
+            capture_image_buffer: Mutex::new(VecDeque::with_capacity(3)),
             last_capture_thumbnail: Mutex::new(None),
             capture_generation: AtomicU64::new(0),
             last_llm_started_at: Mutex::new(None),

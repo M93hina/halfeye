@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 const GEMINI_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_REACTION_PROMPT: &str =
-    "画面を観察し、必要なら短いリアクションを返してください。音声文字起こしがある場合は、その会話内容も文脈として使ってください。";
+    "画面を観察し、必要なら短いリアクションを返してください。入力画像には2秒間隔の直近の複数フレームが含まれることがあります。音声文字起こしがある場合は、その会話内容も文脈として使ってください。";
 const REACTION_SYSTEM_PROMPT: &str = r#"あなたは、ユーザーの友達みたいなAIです。ユーザのPCを覗き、たまに反応を返します。
 
 今回の入力には、画面キャプチャに加えて、直近の音声文字起こしが含まれることがあります。内部推論を書かず、観察結果の要約だけを `observation_summary` に入れてください。
@@ -80,6 +80,7 @@ struct GenerationConfig {
 #[serde(rename_all = "camelCase")]
 struct GeminiResponse {
     candidates: Option<Vec<Candidate>>,
+    usage_metadata: Option<UsageMetadata>,
 }
 
 #[derive(Deserialize)]
@@ -98,6 +99,14 @@ struct ContentResponse {
 #[serde(rename_all = "camelCase")]
 struct PartResponse {
     text: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UsageMetadata {
+    prompt_token_count: Option<u32>,
+    candidates_token_count: Option<u32>,
+    total_token_count: Option<u32>,
 }
 
 impl GeminiClient {
@@ -129,6 +138,14 @@ impl GeminiClient {
         }
 
         let gemini_resp: GeminiResponse = resp.json().await.map_err(|e| e.to_string())?;
+        if let Some(usage) = &gemini_resp.usage_metadata {
+            eprintln!(
+                "Gemini usage_metadata: prompt={}, candidates={}, total={}",
+                usage.prompt_token_count.unwrap_or(0),
+                usage.candidates_token_count.unwrap_or(0),
+                usage.total_token_count.unwrap_or(0)
+            );
+        }
         Self::extract_text(gemini_resp)
     }
 
@@ -246,32 +263,39 @@ impl GeminiClient {
 impl LlmClient for GeminiClient {
     async fn generate_reaction(
         &self,
-        image_base64: &str,
+        images: &[String],
         transcript_chunks: &[TranscriptChunk],
         context: &[ReactionContext],
     ) -> Result<ReactionOutput, String> {
-        if image_base64.trim().is_empty() {
+        if images.is_empty() {
             return Err("image payload is empty".to_string());
         }
 
         let mut contents = Self::build_context_contents(context);
-        contents.push(Content {
-            role: Some("user".to_string()),
-            parts: vec![
-                Part::Text {
-                    text: format!(
-                        "{}\n\n{}",
-                        DEFAULT_REACTION_PROMPT,
-                        Self::format_transcript_chunks(transcript_chunks)
-                    ),
-                },
-                Part::InlineData {
+        let mut parts = vec![Part::Text {
+            text: format!(
+                "{}\n\n{}",
+                DEFAULT_REACTION_PROMPT,
+                Self::format_transcript_chunks(transcript_chunks)
+            ),
+        }];
+        for image in images {
+            if !image.trim().is_empty() {
+                parts.push(Part::InlineData {
                     inline_data: InlineData {
                         mime_type: "image/jpeg".to_string(),
-                        data: image_base64.to_string(),
+                        data: image.clone(),
                     },
-                },
-            ],
+                });
+            }
+        }
+        if parts.len() == 1 {
+            return Err("image payload is empty".to_string());
+        }
+
+        contents.push(Content {
+            role: Some("user".to_string()),
+            parts,
         });
 
         let response_text = self
@@ -335,6 +359,12 @@ mod tests {
                             data: "abc123".to_string(),
                         },
                     },
+                    Part::InlineData {
+                        inline_data: InlineData {
+                            mime_type: "image/jpeg".to_string(),
+                            data: "def456".to_string(),
+                        },
+                    },
                 ],
             }],
             system_instruction: Some(Content {
@@ -364,6 +394,12 @@ mod tests {
                             "inlineData": {
                                 "mimeType": "image/jpeg",
                                 "data": "abc123"
+                            }
+                        },
+                        {
+                            "inlineData": {
+                                "mimeType": "image/jpeg",
+                                "data": "def456"
                             }
                         }
                     ]

@@ -14,6 +14,8 @@ use uuid::Uuid;
 const PREVIEW_INTERVAL_SECS: u64 = 2;
 const LLM_INTERVAL_SECS: u64 = 10;
 const PREVIEW_MAX_WIDTH: u32 = 480;
+const LLM_MAX_LONG_EDGE: u32 = 1280;
+const CAPTURE_BUFFER_SIZE: usize = 3;
 
 fn emit_ai_preview(app: &AppHandle, preview: &AiPreviewState) -> Result<(), String> {
     app.emit("ai_preview_updated", preview)
@@ -122,6 +124,38 @@ fn reset_llm_state(state: &AppState) {
     }
 }
 
+fn push_capture_image(state: &AppState, image: String) -> Result<(), String> {
+    let mut buffer = state
+        .capture_image_buffer
+        .lock()
+        .map_err(|e| e.to_string())?;
+
+    if buffer.len() == CAPTURE_BUFFER_SIZE {
+        buffer.pop_front();
+    }
+    buffer.push_back(image);
+
+    Ok(())
+}
+
+fn read_capture_images(state: &AppState) -> Result<Vec<String>, String> {
+    let buffer = state
+        .capture_image_buffer
+        .lock()
+        .map_err(|e| e.to_string())?;
+
+    Ok(buffer.iter().cloned().collect())
+}
+
+fn reset_capture_image_buffer(state: &AppState) -> Result<(), String> {
+    let mut buffer = state
+        .capture_image_buffer
+        .lock()
+        .map_err(|e| e.to_string())?;
+    buffer.clear();
+    Ok(())
+}
+
 fn reset_thumbnail(state: &AppState) -> Result<(), String> {
     let mut thumbnail = state
         .last_capture_thumbnail
@@ -148,10 +182,7 @@ fn update_thumbnail(
     Ok(true)
 }
 
-fn screen_has_changed(
-    state: &AppState,
-    new_thumb: &capture::CaptureThumb,
-) -> Result<bool, String> {
+fn screen_has_changed(state: &AppState, new_thumb: &capture::CaptureThumb) -> Result<bool, String> {
     let thumbnail = state
         .last_capture_thumbnail
         .lock()
@@ -198,7 +229,12 @@ pub fn start_session(
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "INSERT INTO sessions (id, started_at, status, audio_enabled) VALUES (?1, ?2, ?3, ?4)",
-            params![session_id, started_at, "active", if audio_enabled { 1 } else { 0 }],
+            params![
+                session_id,
+                started_at,
+                "active",
+                if audio_enabled { 1 } else { 0 }
+            ],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -214,6 +250,7 @@ pub fn start_session(
 
     let capture_generation = next_capture_generation(state);
     reset_llm_state(state);
+    reset_capture_image_buffer(state)?;
     reset_thumbnail(state)?;
     clear_ai_preview(app, state)?;
     overlay::show_overlay(app).map_err(|e| e.to_string())?;
@@ -248,6 +285,16 @@ pub fn start_session(
 
             if let Err(error) = update_ai_preview(&app_handle, &state_arc, &image_data) {
                 eprintln!("AI preview error: {}", error);
+            }
+            let llm_frame = match capture::create_llm_frame(&image_data, LLM_MAX_LONG_EDGE) {
+                Ok(frame) => frame,
+                Err(error) => {
+                    eprintln!("LLM image resize error: {}", error);
+                    return;
+                }
+            };
+            if let Err(error) = push_capture_image(&state_arc, llm_frame.image_base64) {
+                eprintln!("Capture image buffer error: {}", error);
             }
 
             match can_attempt_llm(&state_arc) {
@@ -322,9 +369,23 @@ pub fn start_session(
                 }
             };
 
-            match reaction::generate_and_save_reaction(&state_arc, &image_data, &transcript_chunks).await {
+            let images = match read_capture_images(&state_arc) {
+                Ok(images) => images,
+                Err(error) => {
+                    eprintln!("Capture image buffer read error: {}", error);
+                    state_arc.reaction_in_flight.store(false, Ordering::Release);
+                    finish_llm(&state_arc);
+                    return;
+                }
+            };
+            eprintln!("Sending {} capture image(s) to LLM", images.len());
+
+            match reaction::generate_and_save_reaction(&state_arc, &images, &transcript_chunks)
+                .await
+            {
                 Ok(Some(text)) => {
-                    let _ = app_handle.emit("overlay-reaction", serde_json::json!({ "text": text }));
+                    let _ =
+                        app_handle.emit("overlay-reaction", serde_json::json!({ "text": text }));
                 }
                 Ok(None) => {}
                 Err(error) => eprintln!("Reaction error: {}", error),

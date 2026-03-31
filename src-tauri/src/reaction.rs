@@ -19,7 +19,7 @@ pub struct ReactionLog {
 
 pub async fn generate_and_save_reaction(
     state: &AppState,
-    image_base64: &str,
+    images: &[String],
     transcript_chunks: &[TranscriptChunk],
 ) -> Result<Option<String>, String> {
     let api_key =
@@ -33,7 +33,7 @@ pub async fn generate_and_save_reaction(
 
     let context = list_recent_reaction_contexts(state, &session_id, 5)?;
     let output = client
-        .generate_reaction(image_base64, transcript_chunks, &context)
+        .generate_reaction(images, transcript_chunks, &context)
         .await?;
 
     let reaction_id = Uuid::new_v4().to_string();
