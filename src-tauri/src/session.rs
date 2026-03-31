@@ -11,11 +11,11 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
-const PREVIEW_INTERVAL_SECS: u64 = 2;
-const LLM_INTERVAL_SECS: u64 = 10;
+const PREVIEW_INTERVAL_SECS: u64 = 4;
+const LLM_INTERVAL_SECS: u64 = 8;
 const PREVIEW_MAX_WIDTH: u32 = 480;
 const LLM_MAX_LONG_EDGE: u32 = 1280;
-const CAPTURE_BUFFER_SIZE: usize = 3;
+const CAPTURE_BUFFER_SIZE: usize = 2;
 
 fn emit_ai_preview(app: &AppHandle, preview: &AiPreviewState) -> Result<(), String> {
     app.emit("ai_preview_updated", preview)

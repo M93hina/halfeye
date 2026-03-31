@@ -94,7 +94,7 @@ impl AppState {
             audio_handle: Mutex::new(None),
             transcript_chunks: Mutex::new(Vec::new()),
             audio_runtime: Mutex::new(audio_runtime),
-            capture_image_buffer: Mutex::new(VecDeque::with_capacity(3)),
+            capture_image_buffer: Mutex::new(VecDeque::with_capacity(2)),
             last_capture_thumbnail: Mutex::new(None),
             capture_generation: AtomicU64::new(0),
             last_llm_started_at: Mutex::new(None),
