@@ -3,7 +3,7 @@ use crate::llm::gemini::GeminiClient;
 use crate::llm::{ActionType, LlmClient, ReactionContext};
 use crate::state::AppState;
 use chrono::Utc;
-use rusqlite::params;
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -31,9 +31,23 @@ pub async fn generate_and_save_reaction(
         session.session_id.clone().ok_or("No active session")?
     };
 
+    let session_summary = load_session_summary(state, &session_id)?;
+    eprintln!(
+        "Context summary loaded for session {}: {}",
+        session_id,
+        session_summary
+            .as_ref()
+            .map(|summary| format!("present ({} chars)", summary.chars().count()))
+            .unwrap_or_else(|| "missing".to_string())
+    );
     let context = list_recent_reaction_contexts(state, &session_id, 5)?;
     let output = client
-        .generate_reaction(image_base64, transcript_chunks, &context)
+        .generate_reaction(
+            image_base64,
+            transcript_chunks,
+            &context,
+            session_summary.as_deref(),
+        )
         .await?;
 
     let reaction_id = Uuid::new_v4().to_string();
@@ -56,6 +70,10 @@ pub async fn generate_and_save_reaction(
             ],
         )
         .map_err(|e| e.to_string())?;
+    }
+
+    if let Err(error) = maybe_refresh_session_summary(state, &client, &session_id).await {
+        eprintln!("Context summary refresh error: {}", error);
     }
 
     if action_type == ActionType::React.as_str() {
@@ -97,6 +115,129 @@ pub fn list_reactions(state: &AppState, session_id: &str) -> Result<Vec<Reaction
     }
 
     Ok(items)
+}
+
+fn load_session_summary(state: &AppState, session_id: &str) -> Result<Option<String>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let summary = conn
+        .query_row(
+            "SELECT context_summary FROM sessions WHERE id = ?1",
+            params![session_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .and_then(|summary| {
+            let trimmed = summary.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+
+    Ok(summary)
+}
+
+async fn maybe_refresh_session_summary(
+    state: &AppState,
+    client: &impl LlmClient,
+    session_id: &str,
+) -> Result<(), String> {
+    let observation_summaries = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let reaction_count = count_session_reactions(&conn, session_id)?;
+        if reaction_count == 0 || reaction_count % 5 != 0 {
+            return Ok(());
+        }
+
+        list_session_observation_summaries(&conn, session_id)?
+    };
+
+    let prompt = build_context_summary_prompt(&observation_summaries)?;
+    eprintln!(
+        "Refreshing context summary for session {} from {} observation summaries",
+        session_id,
+        observation_summaries.len()
+    );
+    let context_summary = client.generate_text(&prompt).await?;
+    let context_summary = context_summary.trim();
+    if context_summary.is_empty() {
+        return Err("generated context summary is empty".to_string());
+    }
+
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE sessions SET context_summary = ?1 WHERE id = ?2",
+        params![context_summary, session_id],
+    )
+    .map_err(|e| e.to_string())?;
+    eprintln!(
+        "Context summary updated for session {} ({} chars)",
+        session_id,
+        context_summary.chars().count()
+    );
+
+    Ok(())
+}
+
+fn count_session_reactions(conn: &Connection, session_id: &str) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM reactions WHERE session_id = ?1",
+        params![session_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn list_session_observation_summaries(
+    conn: &Connection,
+    session_id: &str,
+) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT observation_summary
+             FROM reactions
+             WHERE session_id = ?1
+             ORDER BY timestamp ASC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(params![session_id], |row| row.get::<_, Option<String>>(0))
+        .map_err(|e| e.to_string())?;
+
+    let mut items = Vec::new();
+    for row in rows {
+        let summary = row.map_err(|e| e.to_string())?;
+        if let Some(summary) = summary {
+            let trimmed = summary.trim();
+            if !trimmed.is_empty() {
+                items.push(trimmed.to_string());
+            }
+        }
+    }
+
+    Ok(items)
+}
+
+fn build_context_summary_prompt(observation_summaries: &[String]) -> Result<String, String> {
+    if observation_summaries.is_empty() {
+        return Err("no observation summaries available".to_string());
+    }
+
+    let timeline = observation_summaries
+        .iter()
+        .enumerate()
+        .map(|(index, summary)| format!("{}. {}", index + 1, summary))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok(format!(
+        "以下は同一セッション中の観察ログです。重複を整理しつつ、ここまでの流れがわかるセッション概要を日本語で3文以内、200字以内で要約してください。\n\n{}",
+        timeline
+    ))
 }
 
 fn list_recent_reaction_contexts(

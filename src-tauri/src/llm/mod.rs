@@ -74,6 +74,7 @@ pub trait LlmClient: Send + Sync {
         image_base64: &str,
         transcript_chunks: &[TranscriptChunk],
         context: &[ReactionContext],
+        session_summary: Option<&str>,
     ) -> Result<ReactionOutput, String>;
     async fn generate_text(&self, prompt: &str) -> Result<String, String>;
 }

@@ -20,7 +20,8 @@ fn migrate(conn: &Connection) -> Result<()> {
             started_at TEXT NOT NULL,
             ended_at   TEXT,
             status     TEXT NOT NULL,
-            audio_enabled INTEGER NOT NULL DEFAULT 0
+            audio_enabled INTEGER NOT NULL DEFAULT 0,
+            context_summary TEXT
         );
 
         CREATE TABLE IF NOT EXISTS reactions (
@@ -73,6 +74,10 @@ fn migrate(conn: &Connection) -> Result<()> {
             "ALTER TABLE sessions ADD COLUMN audio_enabled INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
+    }
+
+    if !column_exists(conn, "sessions", "context_summary")? {
+        conn.execute("ALTER TABLE sessions ADD COLUMN context_summary TEXT", [])?;
     }
 
     conn.execute(

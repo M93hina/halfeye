@@ -240,6 +240,31 @@ impl GeminiClient {
 
         format!("直近の音声文字起こし:\n{}", lines.join("\n"))
     }
+
+    fn build_current_prompt_text(
+        session_summary: Option<&str>,
+        transcript_chunks: &[TranscriptChunk],
+    ) -> String {
+        let mut sections = Vec::new();
+        let summary_char_count = session_summary.map(str::trim).map(str::chars).map(Iterator::count);
+
+        if let Some(summary) = session_summary.map(str::trim).filter(|summary| !summary.is_empty()) {
+            sections.push(format!("これまでのセッション概要:\n{}", summary));
+        }
+
+        eprintln!(
+            "Gemini reaction prompt session summary: {}",
+            summary_char_count
+                .filter(|count| *count > 0)
+                .map(|count| format!("included ({} chars)", count))
+                .unwrap_or_else(|| "not included".to_string())
+        );
+
+        sections.push(DEFAULT_REACTION_PROMPT.to_string());
+        sections.push(Self::format_transcript_chunks(transcript_chunks));
+
+        sections.join("\n\n")
+    }
 }
 
 #[async_trait]
@@ -249,6 +274,7 @@ impl LlmClient for GeminiClient {
         image_base64: &str,
         transcript_chunks: &[TranscriptChunk],
         context: &[ReactionContext],
+        session_summary: Option<&str>,
     ) -> Result<ReactionOutput, String> {
         if image_base64.trim().is_empty() {
             return Err("image payload is empty".to_string());
@@ -259,11 +285,7 @@ impl LlmClient for GeminiClient {
             role: Some("user".to_string()),
             parts: vec![
                 Part::Text {
-                    text: format!(
-                        "{}\n\n{}",
-                        DEFAULT_REACTION_PROMPT,
-                        Self::format_transcript_chunks(transcript_chunks)
-                    ),
+                    text: Self::build_current_prompt_text(session_summary, transcript_chunks),
                 },
                 Part::InlineData {
                     inline_data: InlineData {
@@ -420,5 +442,24 @@ mod tests {
         assert!(text.contains("action_type: silent"));
         assert!(text.contains("observation_summary: editor remained unchanged"));
         assert!(text.contains("reaction: <none>"));
+    }
+
+    #[test]
+    fn prompt_text_includes_session_summary_when_present() {
+        let text = super::GeminiClient::build_current_prompt_text(
+            Some("長めの作業が続いている"),
+            &[],
+        );
+
+        assert!(text.contains("これまでのセッション概要:\n長めの作業が続いている"));
+        assert!(text.contains("音声文字起こし: なし"));
+    }
+
+    #[test]
+    fn prompt_text_skips_blank_session_summary() {
+        let text = super::GeminiClient::build_current_prompt_text(Some("   "), &[]);
+
+        assert!(!text.contains("これまでのセッション概要"));
+        assert!(text.starts_with(super::DEFAULT_REACTION_PROMPT));
     }
 }
