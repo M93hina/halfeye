@@ -197,7 +197,10 @@ pub fn start_transcription_worker(state: &AppState) -> Result<TranscriptionWorke
         Err(error) => {
             cancel_token.cancel();
             let _ = join_handle.join();
-            Err(format!("Failed to start audio transcription worker: {}", error))
+            Err(format!(
+                "Failed to start audio transcription worker: {}",
+                error
+            ))
         }
     }
 }
@@ -236,14 +239,18 @@ fn run_transcription_loop(
             .to_str()
             .ok_or("Whisper model path contains invalid UTF-8.")?;
 
-        let context = WhisperContext::new_with_params(
-            model_path_str,
-            WhisperContextParameters::default(),
-        )
-        .map_err(|e| e.to_string())?;
+        let context =
+            WhisperContext::new_with_params(model_path_str, WhisperContextParameters::default())
+                .map_err(|e| e.to_string())?;
         let whisper_state = context.create_state().map_err(|e| e.to_string())?;
 
-        Ok((sample_rate_hz, shared_samples, stream, context, whisper_state))
+        Ok((
+            sample_rate_hz,
+            shared_samples,
+            stream,
+            context,
+            whisper_state,
+        ))
     })();
 
     let (sample_rate_hz, shared_samples, stream, _context, mut whisper_state) = match init_result {
@@ -395,8 +402,8 @@ fn contains_speech(samples: &[f32]) -> bool {
         return false;
     }
 
-    let rms = (samples.iter().map(|sample| sample * sample).sum::<f32>() / samples.len() as f32)
-        .sqrt();
+    let rms =
+        (samples.iter().map(|sample| sample * sample).sum::<f32>() / samples.len() as f32).sqrt();
 
     rms >= RMS_THRESHOLD
 }

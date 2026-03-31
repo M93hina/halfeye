@@ -63,10 +63,10 @@ fn apply_overlay_size(window: &WebviewWindow, width: f64, height: f64) -> tauri:
 
     if let Some(monitor) = window.primary_monitor()? {
         let work_area = monitor.work_area();
-        let max_width = (work_area.size.width as f64 - f64::from(OVERLAY_MARGIN * 2))
-            .max(OVERLAY_MIN_WIDTH);
-        let max_height = (work_area.size.height as f64 - f64::from(OVERLAY_MARGIN * 2))
-            .max(OVERLAY_MIN_HEIGHT);
+        let max_width =
+            (work_area.size.width as f64 - f64::from(OVERLAY_MARGIN * 2)).max(OVERLAY_MIN_WIDTH);
+        let max_height =
+            (work_area.size.height as f64 - f64::from(OVERLAY_MARGIN * 2)).max(OVERLAY_MIN_HEIGHT);
         next_width = next_width.min(max_width);
         next_height = next_height.min(max_height);
     }

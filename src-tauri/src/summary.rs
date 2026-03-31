@@ -46,13 +46,17 @@ pub async fn generate_summary(state: &AppState, session_id: &str) -> Result<(), 
     );
 
     let summary_text = client.generate_text(&prompt).await?;
-    let summary_title = match generate_summary_title_with_client(&client, &summary_text, session_id).await {
-        Ok(title) => title,
-        Err(error) => {
-            eprintln!("Summary title generation error for session {}: {}", session_id, error);
-            derive_summary_title(&summary_text, session_id)
-        }
-    };
+    let summary_title =
+        match generate_summary_title_with_client(&client, &summary_text, session_id).await {
+            Ok(title) => title,
+            Err(error) => {
+                eprintln!(
+                    "Summary title generation error for session {}: {}",
+                    session_id, error
+                );
+                derive_summary_title(&summary_text, session_id)
+            }
+        };
 
     let summary_id = Uuid::new_v4().to_string();
     let created_at = Utc::now().to_rfc3339();
@@ -70,7 +74,10 @@ pub async fn generate_summary(state: &AppState, session_id: &str) -> Result<(), 
     Ok(())
 }
 
-pub async fn generate_summary_title(summary_text: &str, session_id: &str) -> Result<String, String> {
+pub async fn generate_summary_title(
+    summary_text: &str,
+    session_id: &str,
+) -> Result<String, String> {
     let api_key =
         std::env::var("GEMINI_API_KEY").map_err(|_| "GEMINI_API_KEY not set".to_string())?;
     let client = GeminiClient::new(api_key);
@@ -114,8 +121,14 @@ pub fn normalize_generated_title(title: &str, fallback: &str) -> String {
     let first_line = title.lines().next().unwrap_or_default().trim();
     let trimmed = first_line
         .trim_matches(|ch: char| matches!(ch, '"' | '\'' | '「' | '」' | '『' | '』'))
-        .trim_start_matches(['-', '*', '・', '●', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '.', ' '])
+        .trim_start_matches([
+            '-', '*', '・', '●', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '.', ' ',
+        ])
         .trim();
-    let normalized = if trimmed.is_empty() { fallback } else { trimmed };
+    let normalized = if trimmed.is_empty() {
+        fallback
+    } else {
+        trimmed
+    };
     normalized.chars().take(40).collect()
 }
